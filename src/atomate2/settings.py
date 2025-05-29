@@ -251,6 +251,11 @@ class Atomate2Settings(BaseSettings):
         "or 'mpiexec'. If None, LAMMPS will be run in serial mode.",
     )
 
+    LAMMPS_RUN_LOCALLY: bool = Field(
+        False,
+        description="Whether to execute LAMMPS SLURM scripts locally via bash when flows use run_locally."
+    )
+
     LAMMPS_SUFFIX: list[str] | str | None = Field(
         None,
         description=(

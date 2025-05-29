@@ -14,6 +14,8 @@ from jobflow import Flow, Maker  # ensure Flow is imported
 
 from atomate2.dmax.jobs.structure_generation import PSPStructureMaker
 from atomate2.dmax.jobs.forcefield_param import ForceFieldMaker
+from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
+from atomate2 import SETTINGS
 from atomate2.dmax.schemas.task import DmaxDataGenerationFlowDocument
 
 
@@ -101,6 +103,7 @@ class StructureEquilibrationFlow(Maker):
     loop: bool = False
     forcefield: str = 'auto'
     generator: str = 'auto'
+    run_locally: bool = False
 
     def make(self) -> Flow:
         # Base data-generation
@@ -132,19 +135,19 @@ class StructureEquilibrationFlow(Maker):
             out_dir=wd
         ).make(ff_job.output.data_file)
 
-        # Placeholder: run the LAMMPS simulation
-        # sim_job = YourRunMaker(...).make(input_job.output)
+        # run the LAMMPS simulation: either local bash execution or SLURM
+        local = self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
+        if local:
+            run_job = LammpsLocalRunMaker().make(input_job.output)
+        else:
+            run_job = LammpsSlurmRunMaker().make(input_job.output)
 
-        # Placeholder: parse the LAMMPS output
-        # parse_job = YourParseMaker(...).make(sim_job.output)
-
-        # return flow (for now, output the input doc)
+        # return flow with the simulation run output
         return Flow([
             struct_job,
             ff_job,
             input_job,
-            # sim_job,
-            # parse_job
+            run_job
         ],
-        input_job.output,
+        run_job.output,
         name='structure_equilibration_flow')

@@ -48,9 +48,19 @@ class ForceFieldMaker(Maker):
     def make(self, amor) -> DmaxForceFieldTaskDocument:
         # handle structure document inputs
         if isinstance(amor, DmaxStructureTaskDocument):
-            # use builder_wrapper if available to reuse PSPBuilder without rebuild
+            # reconstruct PSPBuilderWrapper and ensure builder has cell dims
             if amor.builder_wrapper:
-                amor = PSPBuilderWrapper.from_dict(amor.builder_wrapper)
+                wrapper = PSPBuilderWrapper.from_dict(amor.builder_wrapper)
+                # get actual PSPBuilder instance
+                builder = wrapper.get_builder()
+                # only call Build if cell bounds not set
+                try:
+                    # builder.cell is set after Build; check attribute
+                    getattr(builder, 'cell')
+                except Exception:
+                    builder.Build()
+                wrapper._builder = builder
+                amor = wrapper
             else:
                 # fallback: write PDB text to file for foyer
                 pdb_txt = amor.polymer_pdb or amor.packmol_pdb

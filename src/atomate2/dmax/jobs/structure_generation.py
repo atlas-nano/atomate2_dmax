@@ -79,9 +79,14 @@ class PSPStructureMaker(Maker):
         mol_pdb = os.path.join(mol_dir, mol_files[0]) if mol_files else None
         packmol_txt = open(packmol_pdb).read() if os.path.exists(packmol_pdb) else None
         mol_txt = open(mol_pdb).read() if mol_pdb and os.path.exists(mol_pdb) else None
-        # return Pydantic document for DB storage, include builder wrapper dict
+        # return Pydantic document for DB storage
+        # include builder wrapper instance if requested, else exclude or serialize minimal dict
+        if self.return_builder:
+            builder_wrapper = amor
+        else:
+            builder_wrapper = amor.as_dict()
         return DmaxStructureTaskDocument(
             packmol_pdb=packmol_txt,
             polymer_pdb=mol_txt,
-            builder_wrapper=amor.as_dict()
+            builder_wrapper=builder_wrapper,
         )
