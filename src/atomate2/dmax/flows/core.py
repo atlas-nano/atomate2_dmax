@@ -19,6 +19,14 @@ from atomate2.dmax.schemas.task import DmaxDataGenerationFlowDocument
 
 @dataclass
 class BaseDataGenerationFlow(Maker):
+    """
+    Flow for DMA data generation: structure generation and forcefield parametrization.
+
+    Attributes:
+        forcefield: Forcefield type ('opls', 'gaff2', 'auto').
+        generator: Parametrization generator ('psp', 'foyer', 'pysimm', 'antechamber', 'auto').
+    """
+    # flow name
     name: str = "DMA workflow"
     smiles: str = "[*]CC[*]"
     left_cap: str = "C"
@@ -30,6 +38,8 @@ class BaseDataGenerationFlow(Maker):
     out_dir: Path | None = None
     num_conf: int = 1
     loop: bool = False
+    forcefield: str = 'auto'
+    generator: str = 'auto'
 
     def make(self) -> Flow:
         # determine working directory
@@ -49,7 +59,12 @@ class BaseDataGenerationFlow(Maker):
             return_builder=True,
         ).make()
         # forcefield
-        ff_job = ForceFieldMaker(out_dir=wd).make(struct_job.output)
+        ff_job = ForceFieldMaker(
+            forcefield=self.forcefield,
+            generator=self.generator,
+            out_dir=wd,
+        ).make(struct_job.output)
+
         # assemble final document using task documents from each job
         struct_doc = struct_job.output  # DmaxStructureTaskDocument
         ff_doc = ff_job.output  # DmaxForceFieldTaskDocument
@@ -67,7 +82,12 @@ class StructureEquilibrationFlow(Maker):
     """
     Full flow: build structure, parametrize forcefield, generate LAMMPS input for structure equilibration,
     run the simulation, and parse the results.
+
+    Attributes:
+        forcefield: Forcefield type ('opls', 'gaff2', 'auto').
+        generator: Parametrization generator ('psp', 'foyer', 'pysimm', 'antechamber', 'auto').
     """
+
     # inherit or re-specify relevant parameters
     smiles: str = "[*]CC[*]"
     left_cap: str = "C"
@@ -79,6 +99,8 @@ class StructureEquilibrationFlow(Maker):
     out_dir: Path | None = None
     num_conf: int = 1
     loop: bool = False
+    forcefield: str = 'auto'
+    generator: str = 'auto'
 
     def make(self) -> Flow:
         # Base data-generation
@@ -96,7 +118,11 @@ class StructureEquilibrationFlow(Maker):
             loop=self.loop,
             return_builder=True,
         ).make()
-        ff_job = ForceFieldMaker(out_dir=wd).make(struct_job.output)
+        ff_job = ForceFieldMaker(
+            forcefield=self.forcefield,
+            generator=self.generator,
+            out_dir=wd,
+        ).make(struct_job.output)
 
         # Generate LAMMPS input for structure equilibration
         from atomate2.dmax.jobs.lammps_input_generation import StructureEquilInputMaker
@@ -107,7 +133,7 @@ class StructureEquilibrationFlow(Maker):
         ).make(ff_job.output.data_file)
 
         # Placeholder: run the LAMMPS simulation
-        # sim_job = YourRunMaker(...).make(input_job.output.input_dir)
+        # sim_job = YourRunMaker(...).make(input_job.output)
 
         # Placeholder: parse the LAMMPS output
         # parse_job = YourParseMaker(...).make(sim_job.output)

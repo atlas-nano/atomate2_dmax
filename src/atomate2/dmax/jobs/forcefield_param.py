@@ -8,26 +8,40 @@ import os
 import shutil
 import importlib
 
-from atomate2.dmax.generators.forcefield import parametrize_auto, parametrize_foyer
+from atomate2.dmax.generators.forcefield import (
+    parametrize_auto,
+    parametrize_foyer,
+    parametrize_ligpargen,
+    parametrize_gaff2_pysimm,
+    parametrize_gaff2_antechamber,
+)
 from atomate2.dmax.generators.polymer_structure import PSPBuilderWrapper
 from atomate2.dmax.schemas.task import DmaxForceFieldTaskDocument, DmaxStructureTaskDocument
 
 @dataclass
 class ForceFieldMaker(Maker):
     """
-    Maker to parametrize polymer structures.
+    Maker to parametrize polymer structures with flexible forcefield selection.
 
-    Attributes
+    Parameters
     ----------
-    amor : PSPBuilder instance
-        PSPBuilder instance needed for forcefield parametrization.
-    method : str
-        'ligpargen' or 'foyer'.
-    forcefield_name : str | None
-        Name of the forcefield for foyer.
+    forcefield : str
+        Which forcefield to generate: 'opls', 'gaff2', or 'auto' (try all in order).
+    generator : str
+        Which generator to use: 'psp', 'foyer', 'pysimm', 'antechamber', or 'auto'
+        (follow hierarchy based on forcefield).
+    out_dir : str | None
+        Optional directory for intermediate outputs (not commonly used).
+
+    When `forcefield='auto'` and `generator='auto'`, will attempt:
+    LigParGen OPLS → Foyer OPLS → GAFF2 via pysimm → GAFF2 via antechamber.
+    Users can restrict to a specific forcefield or generator.
     """
     name: str = "forcefield_parametrization"
-    method: str = field(default="auto")
+    # Choose which forcefield to apply: 'opls', 'gaff2', or 'auto' (fallback)
+    forcefield: str = "auto"
+    # Choose generator: 'psp', 'foyer', 'pysimm', 'antechamber', or 'auto'
+    generator: str = "auto"
     out_dir: str | None = None
 
     @job(output_schema=DmaxForceFieldTaskDocument)
@@ -50,19 +64,46 @@ class ForceFieldMaker(Maker):
         Generate LAMMPS data file from PSP builder `amor` or its wrapper.
         By default uses automatic selection.
         """
-        # determine the data file path via appropriate generator
-        if isinstance(amor, str) and amor.lower().endswith('.pdb'):
-            data_path = parametrize_foyer(amor)
+        # select parametrization function based on user request
+        # fallback auto uses parametrize_auto
+        def run_auto():
+            return parametrize_auto(amor)
+        # mapping generator strings to functions
+        gen_funcs = {
+            'psp': parametrize_ligpargen,
+            'foyer': parametrize_foyer,
+            'pysimm': parametrize_gaff2_pysimm,
+            'antechamber': parametrize_gaff2_antechamber,
+        }
+        # determine which forcefield(s) and generator to try
+        data_path = None
+        if self.forcefield != 'auto':
+            # user-specified forcefield
+            if self.forcefield == 'opls':
+                gens = [self.generator] if self.generator != 'auto' else ['psp', 'foyer']
+            else:  # gaff2
+                gens = [self.generator] if self.generator != 'auto' else ['pysimm', 'antechamber']
+            for g in gens:
+                try:
+                    func = gen_funcs[g]
+                    data_path = func(amor)
+                    break
+                except Exception:
+                    continue
+            if data_path is None:
+                raise RuntimeError(f"Failed to parametrize {self.forcefield} with {gens}")
         else:
-            if isinstance(amor, dict):
-                amor = PSPBuilderWrapper.from_dict(amor)
-            if not hasattr(amor, 'get_builder'):
-                raise ValueError('Input must be a PSPBuilderWrapper or .pdb path')
-            # full auto parametrization
-            orig_dir = amor.out_dir
-            amor.out_dir = orig_dir
-            data_path = parametrize_auto(amor)
-            # move into job cwd
+            # auto forcefield detection
+            if self.generator != 'auto':
+                # user asked specific generator under auto type, dispatch
+                func = gen_funcs[self.generator]
+                data_path = func(amor)
+            else:
+                data_path = parametrize_auto(amor)
+        # move data into job cwd
+        if not os.path.isabs(data_path) or not os.path.exists(data_path):
+            data_path = os.path.join(os.getcwd(), os.path.basename(data_path))
+        else:
             dest = os.path.join(os.getcwd(), os.path.basename(data_path))
             shutil.move(data_path, dest)
             data_path = dest
@@ -88,5 +129,5 @@ class ForceFieldMaker(Maker):
         return DmaxForceFieldTaskDocument(
             data_file=std_path,
             lammps_data=data_txt,
-            forcefield_type=ftype
+            forcefield_type=ftype,
         )
