@@ -134,8 +134,8 @@ class StructureEquilInputMaker(LammpsInputMakerBase):
     temperature: float = 300.0
     pressure: float = 1.0
     heat_steps: int = 10000
-    npt_steps: int = 10000
-    prod_steps: int = 10000
+    npt_steps: int = 500000
+    prod_steps: int = 100000
 
 @dataclass
 class DmaErrorAnalysisInputMaker(LammpsInputMakerBase):
