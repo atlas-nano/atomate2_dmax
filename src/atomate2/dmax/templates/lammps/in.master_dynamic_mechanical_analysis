@@ -1,0 +1,5 @@
+{% raw %}
+// Dynamic Mechanical Analysis Master Input
+units            {{ units }}
+... [populate with content from in.master_dynamic_mechanical_analysis] 
+{% endraw %}

@@ -1,23 +1,22 @@
-{% raw %}
 # Structure Equilibration Master Input
-units            {{ units }}
-atom_style       {{ atom_style }}
-boundary         {{ boundary }}
-dielectric       {{ dielectric }}
-special_bonds    {{ special_bonds }}
+units            {{ units | default('real') }}
+atom_style       {{ atom_style | default('full') }}
+boundary         {{ boundary | default('p p p') }}
+dielectric       {{ dielectric | default(1.0) }}
+special_bonds    {{ special_bonds | default('lj/coul 0.0 0.0 0.0') }}
 
-pair_style       {{ pair_style }}
-bond_style       {{ bond_style }}
-angle_style      {{ angle_style }}
-dihedral_style   {{ dihedral_style }}
-improper_style   {{ improper_style }}
-kspace_style     {{ kspace_style }}
+pair_style       {{ pair_style | default('lj/cut/coul/long 10.0') }}
+bond_style       {{ bond_style | default('harmonic') }}
+angle_style      {{ angle_style | default('harmonic') }}
+dihedral_style   {{ dihedral_style | default('opls') }}
+improper_style   {{ improper_style | default('cvff') }}
+kspace_style     {{ kspace_style | default('pppm 1e-6') }}
 
 read_data        {{ data_file }}
 
-pair_modify      {{ pair_modify }}
-neighbor         {{ neighbor }}
-neigh_modify     {{ neigh_modify }}
+pair_modify      {{ pair_modify | default('mix arithmetic') }}
+neighbor         {{ neighbor | default('2.0 bin') }}
+neigh_modify     {{ neigh_modify | default('every 2 delay 10 check yes') }}
 
 thermo_style     {{ thermo_style }}
 variable         sname   string {{ system_name }}
@@ -65,4 +64,3 @@ unfix            NVT_Equil
 undump           NVT_Equil_data
 
 write_restart    restart.equil
-{% endraw %}

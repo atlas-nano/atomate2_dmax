@@ -26,10 +26,10 @@ def parametrize_ligpargen(amor, output_fname: str | None = None) -> str:
         outdir = getattr(builder, 'OutDir', None)
     if not outdir:
         raise ValueError('PSP builder instance missing OutDir attribute')
-    # define default output filename in builder directory
+    # define default output filename in builder directory with _psp suffix
     if output_fname is None:
-        output_fname = os.path.join(outdir, 'amor_opls.lmp')
-    # call PSP to generate OPLS file
+        output_fname = os.path.join(outdir, 'amor_opls_psp.lmp')
+    # call PSP to generate OPLS data file, builder now has cell dims
     orig_cwd = os.getcwd()
     try:
         os.chdir(outdir)
@@ -72,9 +72,9 @@ def parametrize_foyer(amor, forcefield_name: str = "oplsaa", output_fname: str |
     gmso_top = from_mbuild(structure_mb)
     ff = FoyerFFs.get_ff(forcefield_name).to_gmso_ff()
     apply(top=gmso_top, forcefields=ff, identify_connections=False)
-    # write output file
+    # write output file with _foyer suffix
     if output_fname is None:
-        output_fname = os.path.join(os.getcwd(), f'amor_{forcefield_name}.lammps')
+        output_fname = os.path.join(os.getcwd(), f'amor_{forcefield_name}_foyer.lammps')
     write_lammpsdata(gmso_top, filename=output_fname, atom_style='full')
     return output_fname
 
@@ -97,12 +97,12 @@ def parametrize_gaff2_pysimm(amor) -> str:
     orig_cwd = os.getcwd()
     try:
         os.chdir(outdir)
-        # generate GAFF2 file with pysimm typing
-        builder.get_gaff2(output_fname='amor_pysimm.lmps', atom_typing='pysimm')
+        # generate GAFF2 file with pysimm typing and prefix gaff2
+        builder.get_gaff2(output_fname='amor_gaff2_pysimm.lmp', atom_typing='pysimm')
     finally:
         os.chdir(orig_cwd)
     # return the full path to generated file
-    return os.path.join(outdir, 'amor_pysimm.lmps')
+    return os.path.join(outdir, 'amor_gaff2_pysimm.lmp')
 
 
 def parametrize_gaff2_antechamber(amor) -> str:
@@ -123,12 +123,12 @@ def parametrize_gaff2_antechamber(amor) -> str:
     orig_cwd = os.getcwd()
     try:
         os.chdir(outdir)
-        # generate GAFF2 file with antechamber typing
-        builder.get_gaff2(output_fname='amor_antechamber.lmps', atom_typing='antechamber')
+        # generate GAFF2 file with antechamber typing and prefix gaff2
+        builder.get_gaff2(output_fname='amor_gaff2_antechamber.lmp', atom_typing='antechamber')
     finally:
         os.chdir(orig_cwd)
     # return the full path to generated file
-    return os.path.join(outdir, 'amor_antechamber.lmps')
+    return os.path.join(outdir, 'amor_gaff2_antechamber.lmp')
 
 
 def parametrize_auto(amor) -> str:

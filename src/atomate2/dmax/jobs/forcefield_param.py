@@ -69,5 +69,24 @@ class ForceFieldMaker(Maker):
         # read file contents
         with open(data_path, 'r') as f:
             data_txt = f.read()
-        # return Pydantic document for DB storage
-        return DmaxForceFieldTaskDocument(lammps_data=data_txt)
+        # determine forcefield type from filename
+        fname = os.path.basename(data_path).lower()
+        if 'opls' in fname:
+            ftype = 'opls'
+        else:
+            ftype = 'gaff2'
+        # rename to standardized 'data.<basename>' (no extension)
+        base = os.path.basename(data_path)
+        name_no_ext, _ = os.path.splitext(base)
+        std_name = f"data.{name_no_ext}"
+        std_path = os.path.join(os.getcwd(), std_name)
+        shutil.move(data_path, std_path)
+        # read file contents after rename
+        with open(std_path, 'r') as f:
+            data_txt = f.read()
+        # return absolute path so next maker can locate and copy it
+        return DmaxForceFieldTaskDocument(
+            data_file=std_path,
+            lammps_data=data_txt,
+            forcefield_type=ftype
+        )

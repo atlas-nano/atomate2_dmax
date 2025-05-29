@@ -1,0 +1,5 @@
+{% raw %}
+// Error Analysis DMA Master Input
+units            {{ units }}
+... [populate with content from in.master_error_analysis, using Jinja2 syntax for variables] 
+{% endraw %}
