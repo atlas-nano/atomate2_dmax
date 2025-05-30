@@ -17,6 +17,8 @@ export OMP_PROC_BIND=spread
 export OMP_PLACES=threads
 
 command="srun --cpu-bind=cores $LAMMPS_EXEC $input"
+#command="shifter --image docker:nersc/lammps_all:24.08 lmp $input"
+
 
 echo $command
 

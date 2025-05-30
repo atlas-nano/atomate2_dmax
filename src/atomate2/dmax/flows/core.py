@@ -15,8 +15,12 @@ from jobflow import Flow, Maker  # ensure Flow is imported
 from atomate2.dmax.jobs.structure_generation import PSPStructureMaker
 from atomate2.dmax.jobs.forcefield_param import ForceFieldMaker
 from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
+from atomate2.dmax.jobs.structure_equil_parser import StructureEquilParserMaker
 from atomate2 import SETTINGS
-from atomate2.dmax.schemas.task import DmaxDataGenerationFlowDocument
+from atomate2.dmax.schemas.task import (
+    DmaxDataGenerationFlowDocument,
+    DmaxStructureEquilibrationFlowDocument,
+)
 
 
 @dataclass
@@ -142,12 +146,28 @@ class StructureEquilibrationFlow(Maker):
         else:
             run_job = LammpsSlurmRunMaker().make(input_job.output)
 
-        # return flow with the simulation run output
+        # parse the outputs: include input and run docs
+        parse_job = StructureEquilParserMaker().make(input_job.output, run_job.output)
+
+        # assemble final Flow document using direct OutputReferences
+        struct_doc = struct_job.output
+        ff_doc = ff_job.output
+        input_doc = input_job.output
+        run_doc = run_job.output
+        doc = DmaxStructureEquilibrationFlowDocument(
+            packmol_pdb=struct_doc.packmol_pdb,
+            polymer_pdb=struct_doc.polymer_pdb,
+            lammps_data=ff_doc.lammps_data,
+            lammps_input=input_doc.input_file,
+            slurm_file=input_doc.slurm_file,
+            job_id=run_doc.job_id,
+            restart_file=run_doc.restart_file,
+        )
+        # return flow chaining all jobs with consolidated document
         return Flow([
             struct_job,
             ff_job,
             input_job,
-            run_job
-        ],
-        run_job.output,
-        name='structure_equilibration_flow')
+            run_job,
+            parse_job,
+        ], doc, name='structure_equilibration_flow')

@@ -32,7 +32,9 @@ class LammpsSlurmRunMaker(Maker):
         if not m:
             raise RuntimeError(f"Failed to submit SLURM script: {out}")
         job_id = m.group(1)
-        return Response(output=DmaxLammpsRunDocument(job_id=job_id))
+        # determine restart path
+        restart_path = os.path.join(input_doc.input_dir, 'restart.equil')
+        return Response(output=DmaxLammpsRunDocument(job_id=job_id, restart_file=restart_path))
 
 
 @dataclass
@@ -44,12 +46,13 @@ class LammpsLocalRunMaker(Maker):
 
     @job(output_schema=DmaxLammpsRunDocument)
     def make(self, input_doc: DmaxLammpsInputDocument) -> Response:
-        # Change to the input directory and execute the SLURM script locally
+        # Change to the input directory and execute the SLURM script locally via bash
         cwd = os.getcwd()
         os.chdir(input_doc.input_dir)
         try:
             subprocess.check_call(["bash", input_doc.slurm_file])
         finally:
             os.chdir(cwd)
-        # Use 'local' as job_id to indicate local execution
-        return Response(output=DmaxLammpsRunDocument(job_id="local"))
+        # Use 'local' as job_id and capture restart file path
+        restart_path = os.path.join(input_doc.input_dir, 'restart.equil')
+        return Response(output=DmaxLammpsRunDocument(job_id="local", restart_file=restart_path))

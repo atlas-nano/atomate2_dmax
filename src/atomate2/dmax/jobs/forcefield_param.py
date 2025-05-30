@@ -129,7 +129,7 @@ class ForceFieldMaker(Maker):
         # rename to standardized 'data.<basename>' (no extension)
         base = os.path.basename(data_path)
         name_no_ext, _ = os.path.splitext(base)
-        std_name = f"data.{name_no_ext}"
+        std_name = f"{name_no_ext}.data"
         std_path = os.path.join(os.getcwd(), std_name)
         shutil.move(data_path, std_path)
         # read file contents after rename
