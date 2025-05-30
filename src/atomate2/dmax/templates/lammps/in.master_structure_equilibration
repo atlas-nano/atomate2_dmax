@@ -18,7 +18,7 @@ pair_modify      {{ pair_modify | default('mix arithmetic') }}
 neighbor         {{ neighbor | default('2.0 bin') }}
 neigh_modify     {{ neigh_modify | default('every 2 delay 10 check yes') }}
 
-thermo_style     {{ thermo_style }}
+thermo_style     {{ thermo_style | default('custom step dt time etotal ecouple ke pe temp press pxx pyy pzz pxy pxz pyz lx ly lz vol density') }}
 variable         sname   string {{ system_name }}
 variable         timestep equal {{ timestep }}
 
@@ -30,6 +30,7 @@ print            "Starting conjugate-gradient minimization"
 dump             MIN_data all custom 25 ${sname}.min.lammpstrj id type xu yu zu vx vy vz
 thermo           25
 min_style        cg
+minimize         0 1.0e-6 5000 50000
 minimize         0 1.0e-6 5000 50000
 undump           MIN_data
 
@@ -50,17 +51,17 @@ dump             NPT_Equil_data all custom 1000 ${sname}.${temperature}K.npt.lam
 variable         latx equal lx
 variable         laty equal ly
 variable         latz equal lz
-fix              cellavg all ave/time 1 250000 250000 v_latx v_laty v_latz file cell.dat
+#fix              cellavg all ave/time 1 250000 250000 v_latx v_laty v_latz file cell.dat
 run              {{ npt_steps }}
-unfix            cellavg
+#unfix            cellavg
 undump           NPT_Equil_data
 
 # Final Equilibration
-print            "Final NVT equilibration"
-fix              NVT_Equil all nvt temp ${temperature} ${temperature} 400 tloop 10 ploop 10
-dump             NVT_Equil_data all custom 1000 ${sname}.${temperature}K.prod.lammpstrj id type xu yu zu vx vy vz fx fy fz
-run              {{ prod_steps }}
-unfix            NVT_Equil
-undump           NVT_Equil_data
+#print            "Final NVT equilibration"
+#fix              NVT_Equil all nvt temp ${temperature} ${temperature} 400 tloop 10 ploop 10
+#dump             NVT_Equil_data all custom 1000 ${sname}.${temperature}K.prod.lammpstrj id type xu yu zu vx vy vz fx fy fz
+#run              {{ prod_steps }}
+#unfix            NVT_Equil
+#undump           NVT_Equil_data
 
 write_restart    restart.equil
