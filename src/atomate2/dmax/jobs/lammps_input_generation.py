@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from jobflow import Maker, job
@@ -37,7 +38,8 @@ class LammpsInputMakerBase(Maker):
     # map simulation_type to template file
     SIM2TEMPLATE = {
         'structure equilibration': 'in.master_structure_equilibration',
-        'error analysis': 'in.master_error_analysis',
+        # both DMA error analysis and DMA simulation use the same template
+        'error analysis': 'in.master_dynamic_mechanical_analysis',
         'dma simulation': 'in.master_dynamic_mechanical_analysis',
     }
 
@@ -59,8 +61,8 @@ class LammpsInputMakerBase(Maker):
         tpl = self.SIM2TEMPLATE[self.simulation_type]
         # build context from maker attributes
         ctx = asdict(self)
-        # override system_name in context so {{ system_name }} renders correctly
-        ctx['system_name'] = self.name
+        # override system_name in context (replace spaces with underscores)
+        ctx['system_name'] = self.name.replace(' ', '_')
         # always inject style defaults for OPLS/GAFF2
         style_defaults = {
             'opls': {
@@ -93,6 +95,12 @@ class LammpsInputMakerBase(Maker):
             },
         }
         ctx.update(style_defaults.get(self.data_file_type, {}))
+        # ensure full thermo_style listing for DMA simulations
+        if self.simulation_type == 'dma simulation':
+            ctx['thermo_style'] = (
+                'custom step dt time etotal ecouple ke pe temp press pxx pyy pzz '
+                'pxy pxz pyz lx ly lz vol density'
+            )
         ctx['data_file'] = os.path.basename(data_file)
         input_fname = 'in.lammps'
         render_template(tpl, ctx, os.path.join(wd, input_fname))
@@ -138,31 +146,58 @@ class StructureEquilInputMaker(LammpsInputMakerBase):
     prod_steps: int = 100000
 
 @dataclass
-class DmaErrorAnalysisInputMaker(LammpsInputMakerBase):
-    name: str = 'dma_error_analysis'
-    simulation_type: str = 'error analysis'
-    data_file_type: str = 'opls'
-    # variables common to DMA error analysis
-    period: float = 1000
-    master_timestep: float = 1.0
-    master_temperature: float = 300.0
-    master_pressure: float = 0.0
-    master_dim_0: float = 1.0
-    master_dim_1: float = 0.0
-    master_dim_2: float = 0.0
-    master_seed: int = 12345
-    master_period: float = 1000
-    master_runtime: int = 10000
-    master_thermo: int = 1000
-
-@dataclass
 class DmaInputMaker(LammpsInputMakerBase):
     name: str = 'dma'
     simulation_type: str = 'dma simulation'
     data_file_type: str = 'opls'
-    # variables for standard DMA run
-    master_timestep: float = 1.0
-    master_temperature: float = 300.0
-    master_period: float = 1000
-    master_thermo: int = 1000
-    master_runtime: int = 10000
+    # whether this is an error analysis run (random seed) or standard DMA
+    error_analysis: bool = False
+    # input restart is always required
+    # DMA parameters
+    timestep: float = 1.0
+    temperature: float = 300.0
+    pressure: float = 1.0
+    # deformation axes (x, y, z); default to z, x, y
+    dim_0: str = 'z'
+    dim_1: str = 'x'
+    dim_2: str = 'y'
+    period: int = 0     # will be computed by frequency
+    runtime: int = 0    # will be computed by num_cycles
+    thermo: int = 0     # will be computed by num_cycles
+    seed: int = 12345678
+    frequency: float = 25e9  # oscillation frequency in Hz
+    num_cycles: int = 2     # number of oscillation cycles to run
+    osc_amp_pc: float = 20  # oscillation amplitude in percent of box length
+
+    @job(output_schema=DmaxLammpsInputDocument)
+    def make(self, restart_file: str, data_file: str = None) -> DmaxLammpsInputDocument:
+         # determine seed based on error_analysis flag
+         if self.error_analysis:
+             import random
+             self.seed = random.randint(10**7, 10**8 - 1)
+         # determine deformation axes from provided data file box dimensions
+         if data_file:
+             lengths = {}
+             try:
+                 with open(data_file, 'r') as df:
+                     for line in df:
+                         parts = line.strip().split()
+                         if len(parts) == 4 and parts[2].endswith('lo') and parts[3].endswith('hi'):
+                             axis = parts[2][0].lower()
+                             lo, hi = float(parts[0]), float(parts[1])
+                             lengths[axis] = hi - lo
+                 # sort axes by length descending
+                 if len(lengths) == 3:
+                     sorted_axes = sorted(lengths.items(), key=lambda kv: kv[1], reverse=True)
+                     self.dim_0, self.dim_1, self.dim_2 = [ax for ax, _ in sorted_axes]
+             except Exception:
+                 # fallback to defaults 'z','x','y'
+                 pass
+         # compute period, thermo, and total runtime in timesteps
+         dt_s = self.timestep * 1e-15
+         steps_per_period = math.ceil((1.0 / self.frequency) / dt_s)
+         self.period = steps_per_period
+         self.thermo = max(1, steps_per_period // 1000)
+         self.runtime = steps_per_period * self.num_cycles
+         # delegate to base class to copy restart file, render templates, and return document
+         return LammpsInputMakerBase.make.__wrapped__(self, restart_file)

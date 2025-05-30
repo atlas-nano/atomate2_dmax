@@ -1,5 +1,70 @@
-{% raw %}
-// Dynamic Mechanical Analysis Master Input
-units            {{ units }}
-... [populate with content from in.master_dynamic_mechanical_analysis] 
-{% endraw %}
+# Dynamic Mechanical Analysis Master Input
+units            {{ units | default('real') }}
+atom_style       {{ atom_style | default('full') }}
+boundary         {{ boundary | default('p p p') }}
+dielectric       {{ dielectric | default(1.0) }}
+special_bonds    {{ special_bonds | default('lj/coul 0.0 0.0 0.0') }}
+
+pair_style       {{ pair_style | default('lj/cut/coul/long 10.0') }}
+bond_style       {{ bond_style | default('harmonic') }}
+angle_style      {{ angle_style | default('harmonic') }}
+dihedral_style   {{ dihedral_style | default('opls') }}
+improper_style   {{ improper_style | default('cvff') }}
+kspace_style     {{ kspace_style | default('pppm 1e-6') }}
+
+# Read the equilibrated restart from previous flow
+read_restart     restart.equil
+
+pair_modify      {{ pair_modify | default('mix geometric') }}
+neighbor         {{ neighbor | default('2.0 bin') }}
+neigh_modify     {{ neigh_modify | default('every 2 delay 4 check yes one 3000') }}
+
+thermo_style     {{ thermo_style | default('custom step dt time etotal ecouple ke temp pe press pxx pyy pzz pxy pxz pyz lx ly lz vol density') }}
+
+# Variables defined by input makers
+variable         sname       string {{ system_name }}
+variable         timestep    equal {{ timestep }}
+variable         temperature equal {{ temperature }}
+variable         pressure    equal {{ pressure }}
+variable         x           equal lx
+variable         y           equal ly
+variable         z           equal lz
+variable         oap         equal 0.1*{{ osc_amp_pc }}
+variable         seed        equal {{ seed }}
+variable         period      equal {{ period }}
+
+print            .
+print            ===================================================
+print            "NPT Equilibration at Unique Starting Seed"
+print            ===================================================
+print            .
+
+reset_timestep   0
+
+# Isotropic NPT equilibration
+velocity         all create ${temperature} ${seed} dist gaussian
+fix              NPT_Equil all npt temp ${temperature} ${temperature} 400 iso ${pressure} ${pressure} 5000.0
+thermo           1000
+dump             Equil_data all custom 1000 ${sname}.${temperature}K.equil.lammpstrj id type xu yu zu vx vy vz fx fy fz
+run              {{ npt_steps | default(100000) }}
+unfix            NPT_Equil
+undump           Equil_data
+
+print            .
+print            ===================================================
+print            "NPT Dynamic Mechanical Analysis"
+print            ===================================================
+print            .
+
+reset_timestep   0
+
+# DMA under NPT constraints on orthogonal directions
+fix              NPT_DMA   all npt temp ${temperature} ${temperature} 400 {{ dim_1 }} 0.0 0.0 5000 {{ dim_2 }} 0.0 0.0 5000
+fix              Deform_DMA all deform 1 {{ dim_0 }} wiggle ${oap} ${period} # deform {{ dim_0 }}
+
+thermo           {{ thermo }}
+dump             DMA_data all custom {{ thermo }} ${sname}.${temperature}K.dma.lammpstrj id type xu yu zu vx vy vz fx fy fz
+run              {{ runtime }}
+unfix            NPT_DMA
+unfix            Deform_DMA
+undump           DMA_data

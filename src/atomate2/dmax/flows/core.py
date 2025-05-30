@@ -10,16 +10,19 @@ from pathlib import Path
 from typing import Any
 import os
 
-from jobflow import Flow, Maker  # ensure Flow is imported
+from jobflow import Flow, Maker, Response  # include Response for DMA flow
 
 from atomate2.dmax.jobs.structure_generation import PSPStructureMaker
 from atomate2.dmax.jobs.forcefield_param import ForceFieldMaker
 from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
 from atomate2.dmax.jobs.structure_equil_parser import StructureEquilParserMaker
+from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker  # import DMA input maker
+from atomate2.dmax.jobs.dma_parser import DmaParserMaker  # import DMA parser maker
 from atomate2 import SETTINGS
 from atomate2.dmax.schemas.task import (
     DmaxDataGenerationFlowDocument,
     DmaxStructureEquilibrationFlowDocument,
+    DmaxDmaFlowDocument,
 )
 
 
@@ -171,3 +174,39 @@ class StructureEquilibrationFlow(Maker):
             run_job,
             parse_job,
         ], doc, name='structure_equilibration_flow')
+
+
+@dataclass
+class DmaFlow(Maker):
+    """
+    Flow that generates DMA input, runs LAMMPS, and parses DMA outputs.
+    """
+    name: str = 'dma_flow'
+    run_locally: bool = False  # whether to run LAMMPS locally via bash script
+
+    def make(self, restart_file: str) -> Flow:
+        # generate input
+        dma_input = DmaInputMaker().make(restart_file)
+        dma_input.append_name(' input')
+        # run LAMMPS: select SLURM or local based on run_locally or settings
+        local = self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
+        if local:
+            run_job = LammpsLocalRunMaker().make(dma_input.output)
+        else:
+            run_job = LammpsSlurmRunMaker().make(dma_input.output)
+        run_job.append_name(' run')
+        # parse outputs using the input and run documents
+        parser_job = DmaParserMaker().make(dma_input.output, run_job.output)
+        parser_job.append_name(' parse')
+        # assemble and return the Flow directly
+        return Flow(
+            [dma_input, run_job, parser_job],
+            output={
+                'lammps_input': dma_input.output,
+                'slurm_file': dma_input.output.slurm_file,
+                'job_id': run_job.output.job_id,
+                'restart_file': run_job.output.restart_file,
+                'parser_output': parser_job.output,
+            },
+            name=self.name,
+        )

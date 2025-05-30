@@ -123,3 +123,26 @@ class DmaxStructureEquilParserDocument(BaseModel):
     rdf_plot: Optional[str] = Field(
         None, description="Path to the radial distribution function plot"
     )
+
+class DmaxDmaParserDocument(BaseModel):
+    "Task document for parsing DMA outputs: moduli, phase, and plots."
+    storage_modulus: float = Field(..., description="Storage modulus in MPa")
+    loss_modulus: float = Field(..., description="Loss modulus in MPa")
+    tan_delta: Optional[float] = Field(None, description="Loss tangent")
+    elastic_modulus: float = Field(..., description="Elastic modulus (slope) in MPa")
+    poisson_ratio: float = Field(..., description="Poisson's ratio")
+    phase_angle_rad: float = Field(..., description="Phase angle in radians")
+    phase_angle_deg: float = Field(..., description="Phase angle in degrees")
+    fit_r2: float = Field(..., description="R² of sinusoidal fit")
+    fit_rmse: float = Field(..., description="RMSE of sinusoidal fit in MPa")
+    amplitude: float = Field(..., description="Amplitude of fitting curve in MPa")
+    pressure_plot: str = Field(..., description="Path to pressure vs time fit plot")
+    stress_strain_plot: str = Field(..., description="Path to stress-strain curve plot")
+
+class DmaxDmaFlowDocument(BaseModel):
+    "Flow document for complete DMA run: input, run, parser outputs."
+    lammps_input: Optional[Any] = Field(None, description="Reference to DMA input task output")
+    slurm_file: Optional[Any] = Field(None, description="SLURM script file (OutputReference)")
+    job_id: Optional[Any] = Field(None, description="SLURM job ID or 'local' (OutputReference)")
+    restart_file: Optional[Any] = Field(None, description="Restart file path (OutputReference)")
+    parser_output: Optional[Any] = Field(None, description="Parsed DMA results (OutputReference)")

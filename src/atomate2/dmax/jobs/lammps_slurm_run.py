@@ -46,11 +46,14 @@ class LammpsLocalRunMaker(Maker):
 
     @job(output_schema=DmaxLammpsRunDocument)
     def make(self, input_doc: DmaxLammpsInputDocument) -> Response:
-        # Change to the input directory and execute the SLURM script locally via bash
+        # Change to the input directory and run LAMMPS directly
         cwd = os.getcwd()
         os.chdir(input_doc.input_dir)
         try:
-            subprocess.check_call(["bash", input_doc.slurm_file])
+            # run LAMMPS binary with input script and log
+            lmp_bin = os.environ.get('LAMMPS_BINARY', 'lmp_mpi')  # default to mpi binary
+            cmd = [lmp_bin, '-in', input_doc.input_file, '-log', 'lammps.log']
+            subprocess.check_call(cmd)
         finally:
             os.chdir(cwd)
         # Use 'local' as job_id and capture restart file path
