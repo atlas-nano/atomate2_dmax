@@ -61,6 +61,7 @@ class BaseDataGenerationFlow(Maker):
     loop: bool = False
     forcefield: str = 'auto'
     generator: str = 'auto'
+    include_impropers: bool = False
 
     def make(self) -> Flow:
         # determine working directory
@@ -83,6 +84,7 @@ class BaseDataGenerationFlow(Maker):
         ff_job = ForceFieldMaker(
             forcefield=self.forcefield,
             generator=self.generator,
+            include_impropers=self.include_impropers,
             out_dir=wd,
         ).make(struct_job.output)
 
@@ -123,6 +125,8 @@ class StructureEquilibrationFlow(Maker):
     forcefield: str = 'auto'
     generator: str = 'auto'
     run_locally: bool = False
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self) -> Flow:
         # Base data-generation
@@ -157,7 +161,10 @@ class StructureEquilibrationFlow(Maker):
         # run the LAMMPS simulation: either local bash execution or SLURM
         local = self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
         if local:
-            run_job = LammpsLocalRunMaker().make(input_job.output)
+            run_job = LammpsLocalRunMaker(
+                use_gpu=self.use_gpu,
+                gpu_count=self.gpu_count
+            ).make(input_job.output)
         else:
             run_job = LammpsSlurmRunMaker().make(input_job.output)
 
@@ -195,6 +202,8 @@ class DmaFlow(Maker):
     """
     name: str = 'dma_flow'
     run_locally: bool = False  # whether to run LAMMPS locally via bash script
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self, restart_file: str) -> Flow:
         # generate input
@@ -203,7 +212,10 @@ class DmaFlow(Maker):
         # run LAMMPS: select SLURM or local based on run_locally or settings
         local = self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
         if local:
-            run_job = LammpsLocalRunMaker().make(dma_input.output)
+            run_job = LammpsLocalRunMaker(
+                use_gpu=self.use_gpu,
+                gpu_count=self.gpu_count
+            ).make(dma_input.output)
         else:
             run_job = LammpsSlurmRunMaker().make(dma_input.output)
         run_job.append_name(' run')
@@ -235,6 +247,8 @@ class StrainSizeConvergenceFlow(Maker):
     min_amp_pc: float = 0.1
     max_amp_pc: float = 50.0
     existing_dirs: dict[float, list[str]] | None = None  # optional mapping from amplitude to directories
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self, restart_file: str) -> Flow:
         from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker
@@ -263,7 +277,10 @@ class StrainSizeConvergenceFlow(Maker):
                 dma_input_job = DmaInputMaker(osc_amp_pc=float(amp)).make(restart_file)
                 all_jobs.append(dma_input_job)
                 if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY:
-                    run_job = LammpsLocalRunMaker().make(dma_input_job.output)
+                    run_job = LammpsLocalRunMaker(
+                        use_gpu=self.use_gpu,
+                        gpu_count=self.gpu_count
+                    ).make(dma_input_job.output)
                 else:
                     run_job = LammpsSlurmRunMaker().make(dma_input_job.output)
                 all_jobs.append(run_job)
@@ -326,6 +343,8 @@ class ErrorAnalysisFlow(Maker):
     n_sims: int = 5
     run_locally: bool = False
     existing_dirs: dict[float, list[str]] | None = None  # map frequency to list of dirs with existing runs
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self, restart_file: str | None = None) -> Flow:
         all_jobs: list = []
@@ -359,7 +378,10 @@ class ErrorAnalysisFlow(Maker):
                     ).make(restart_file)  # type: ignore
                     all_jobs.append(dma_input)
                     run_job = (
-                        LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
+                        LammpsLocalRunMaker(
+                            use_gpu=self.use_gpu,
+                            gpu_count=self.gpu_count
+                        ) if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
                         else LammpsSlurmRunMaker()
                     ).make(dma_input.output)
                     all_jobs.append(run_job)
@@ -386,6 +408,8 @@ class GlassTransitionTemperatureFlow(Maker):
     n_temps: int = 9  # provides ~25K spacing over 200-400K
     run_locally: bool = False
     existing_dirs: dict[float, list[str]] | None = None  # optional mapping from temperature to directories
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self, restart_file: str | None = None) -> Flow:
         all_jobs: list = []
@@ -415,7 +439,7 @@ class GlassTransitionTemperatureFlow(Maker):
                 all_jobs.append(dma_input)
                 # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
                 run_job = (
-                    LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
+                    LammpsLocalRunMaker(use_gpu=self.use_gpu, gpu_count=self.gpu_count) if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
                     else LammpsSlurmRunMaker()
                 ).make(dma_input.output)
                 all_jobs.append(run_job)
@@ -440,6 +464,8 @@ class MasterCurveFlow(Maker):
     freqs_ghz: list[float] = field(default_factory=lambda: np.logspace(np.log10(10.0), np.log10(100.0), 15))
     run_locally: bool = False
     existing_dirs: dict[tuple[float, float], list[str]] | None = None
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self, restart_file: str | None = None) -> Flow:
         all_jobs: list = []
@@ -466,7 +492,7 @@ class MasterCurveFlow(Maker):
                 else:
                     dma_input = DmaInputMaker(osc_amp_pc=self.osc_amp_pc, num_cycles=self.num_cycles, frequency=fghz * 1e9).make(restart_file)  # type: ignore
                     all_jobs.append(dma_input)
-                    run_job = (LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY else LammpsSlurmRunMaker()).make(dma_input.output)
+                    run_job = (LammpsLocalRunMaker(use_gpu=self.use_gpu, gpu_count=self.gpu_count) if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY else LammpsSlurmRunMaker()).make(dma_input.output)
                     all_jobs.append(run_job)
                     parser = DmaParserMaker().make(dma_input.output, run_job.output)
                     all_jobs.append(parser)
@@ -484,15 +510,17 @@ class FullGlassTemperatureFlow(Maker):
     run_locally: bool = False
     error_freqs_ghz: list[float] = field(default_factory=lambda: list(np.linspace(0.1, 100.0, 5)))
     error_n_sims: int = 10
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self) -> Flow:
         # 1) generate structure and forcefield
-        data_flow = BaseDataGenerationFlow(run_locally=self.run_locally).make()
+        data_flow = BaseDataGenerationFlow(run_locally=self.run_locally, use_gpu=self.use_gpu, gpu_count=self.gpu_count).make()
         # 2) structure equilibration
-        struct_flow = StructureEquilibrationFlow(run_locally=self.run_locally).make()
+        struct_flow = StructureEquilibrationFlow(run_locally=self.run_locally, use_gpu=self.use_gpu, gpu_count=self.gpu_count).make()
         restart = struct_flow.output.restart_file
         # 3) strain convergence
-        strain_flow = StrainSizeConvergenceFlow(run_locally=self.run_locally).make(restart)
+        strain_flow = StrainSizeConvergenceFlow(run_locally=self.run_locally, use_gpu=self.use_gpu, gpu_count=self.gpu_count).make(restart)
         optimal_amp = strain_flow.output.optimal_osc_amp_pc
         # 4) cycles convergence
         num_flow = NumCyclesConvergenceFlow(threshold=0.01).make(restart)
@@ -509,7 +537,9 @@ class FullGlassTemperatureFlow(Maker):
         glass_flow = GlassTransitionTemperatureFlow(
             osc_amp_pc=optimal_amp,
             num_cycles=optimal_cycles,
-            run_locally=self.run_locally
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count
         ).make(restart)
         # assemble
         return Flow(
@@ -523,6 +553,8 @@ class FullGlassTemperatureFlow(Maker):
 class FullDmaxFlow(FullGlassTemperatureFlow):
     """Run full DMAx workflow including master curve construction"""
     name: str = 'full_dmax_flow'
+    use_gpu: bool = False  # whether to use GPU for LAMMPS runs
+    gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self) -> Flow:
         full_flow = super().make()
@@ -536,7 +568,9 @@ class FullDmaxFlow(FullGlassTemperatureFlow):
             osc_amp_pc=optimal_amp,
             num_cycles=optimal_cycles,
             reference_temp=glass_temp,
-            run_locally=self.run_locally
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count
         ).make(restart)
         return Flow(
             full_flow.jobs + [master_flow],

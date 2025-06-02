@@ -42,6 +42,8 @@ class ForceFieldMaker(Maker):
     forcefield: str = "auto"
     # Choose generator: 'psp', 'foyer', 'pysimm', 'antechamber', or 'auto'
     generator: str = "auto"
+    # whether to include impropers in the generated LAMMPS data
+    include_impropers: bool = False
     out_dir: str | None = None
 
     @job(output_schema=DmaxForceFieldTaskDocument)
@@ -77,18 +79,17 @@ class ForceFieldMaker(Maker):
         # select parametrization function based on user request
         # fallback auto uses parametrize_auto
         def run_auto():
-            return parametrize_auto(amor)
+            return parametrize_auto(amor, include_impropers=self.include_impropers)
         # mapping generator strings to functions
         gen_funcs = {
-            'psp': parametrize_ligpargen,
-            'foyer': parametrize_foyer,
-            'pysimm': parametrize_gaff2_pysimm,
-            'antechamber': parametrize_gaff2_antechamber,
+            'psp': lambda a: parametrize_ligpargen(a, include_impropers=self.include_impropers),
+            'foyer': lambda a: parametrize_foyer(a),
+            'pysimm': lambda a: parametrize_gaff2_pysimm(a),
+            'antechamber': lambda a: parametrize_gaff2_antechamber(a),
         }
         # determine which forcefield(s) and generator to try
         data_path = None
-        if self.forcefield != 'auto':
-            # user-specified forcefield
+        if self.forcefield != 'auto':  # user-specified forcefield
             if self.forcefield == 'opls':
                 gens = [self.generator] if self.generator != 'auto' else ['psp', 'foyer']
             else:  # gaff2
@@ -109,7 +110,7 @@ class ForceFieldMaker(Maker):
                 func = gen_funcs[self.generator]
                 data_path = func(amor)
             else:
-                data_path = parametrize_auto(amor)
+                data_path = parametrize_auto(amor, include_impropers=self.include_impropers)
         # move data into job cwd
         if not os.path.isabs(data_path) or not os.path.exists(data_path):
             data_path = os.path.join(os.getcwd(), os.path.basename(data_path))

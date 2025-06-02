@@ -12,7 +12,7 @@ except ImportError:
     Forcefield = None
 
 
-def parametrize_ligpargen(amor, output_fname: str | None = None) -> str:
+def parametrize_ligpargen(amor, output_fname: str | None = None, include_impropers: bool = False) -> str:
     """
     Generate an OPLS-AA LAMMPS file via PSP's get_opls.
     Returns the full path to the generated .lmp file.
@@ -34,7 +34,8 @@ def parametrize_ligpargen(amor, output_fname: str | None = None) -> str:
     try:
         os.chdir(outdir)
         # generate OPLS data file, builder now has cell dims
-        builder.get_opls(output_fname=output_fname)
+        # include_impropers controls writing of improper parameters
+        builder.get_opls(output_fname=output_fname, include_impropers=include_impropers)
     finally:
         os.chdir(orig_cwd)
     return output_fname
@@ -131,7 +132,7 @@ def parametrize_gaff2_antechamber(amor) -> str:
     return os.path.join(outdir, 'amor_gaff2_antechamber.lmp')
 
 
-def parametrize_auto(amor) -> str:
+def parametrize_auto(amor, include_impropers: bool = False) -> str:
     """
     Automatic forcefield selection: default to PSP OPLS (ligpargen), then foyer, then GAFF2 pysimm, then GAFF2 antechamber.
     Adds debug output to trace failures.
@@ -139,7 +140,7 @@ def parametrize_auto(amor) -> str:
     # Try LigParGen
     print("parametrize_auto: attempting LigParGen OPLS-AA parametrization...")
     try:
-        path = parametrize_ligpargen(amor)
+        path = parametrize_ligpargen(amor, include_impropers=include_impropers)
         print("parametrize_auto: LigParGen succeeded ->", path)
         return path
     except Exception as e:
