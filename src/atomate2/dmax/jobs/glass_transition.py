@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from jobflow import Maker, job, Response
 from scipy.interpolate import UnivariateSpline
+import csv
 
 from atomate2.dmax.schemas.task import DmaxGlassTransitionFlowDocument
 from atomate2.dmax.schemas.task import DmaxDmaParserDocument
@@ -36,8 +37,19 @@ class GlassTransitionPlotMaker(Maker):
             glass_temp = float(roots[0]) if roots else float(np.nan)
         except Exception:
             glass_temp = float(np.nan)
-        # plot curves
+        # prepare additional metrics for CSV
+        elastics = np.array([d.elastic_modulus for d in parser_docs], dtype=float)
+        poissons = np.array([d.poisson_ratio for d in parser_docs], dtype=float)
+        # write data CSV
         cwd = os.getcwd()
+        data_csv = os.path.join(cwd, 'glass_transition_data.csv')
+        # write CSV without pandas
+        with open(data_csv, 'w', newline='') as f_csv:
+            writer = csv.writer(f_csv)
+            writer.writerow(['temperature', 'storage_modulus', 'loss_modulus', 'tan_delta', 'elastic_modulus', 'poisson_ratio'])
+            for T, sm, lm, td, em, pr in zip(temps, storages, losses, tans, elastics, poissons):
+                writer.writerow([T, sm, lm, td, em, pr])
+        # plot curves
         plot_file = os.path.join(cwd, 'glass_transition.png')
         plt.figure()
         # storage modulus
@@ -69,5 +81,6 @@ class GlassTransitionPlotMaker(Maker):
                 tan_delta=tans.tolist(),
                 glass_transition_temp=glass_temp,
                 plot=plot_file,
+                data_csv=data_csv,
             )
         )

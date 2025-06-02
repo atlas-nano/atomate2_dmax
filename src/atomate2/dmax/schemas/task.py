@@ -194,3 +194,4 @@ class DmaxGlassTransitionFlowDocument(BaseModel):
     tan_delta: list[float] = Field(..., description="Loss tangent at each temperature")
     glass_transition_temp: float = Field(..., description="Estimated glass transition temperature (K)")
     plot: str = Field(..., description="Path to plot of moduli and tan delta vs temperature with Tg annotation")
+    data_csv: str = Field(..., description="Path to CSV file containing moduli and Poisson ratio data per temperature")
