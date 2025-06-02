@@ -230,43 +230,48 @@ class StrainSizeConvergenceFlow(Maker):
     n_amps: int = 5
     min_amp_pc: float = 0.1
     max_amp_pc: float = 50.0
+    existing_dirs: dict[float, list[str]] | None = None  # optional mapping from amplitude to directories
 
     def make(self, restart_file: str) -> Flow:
         from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker
         from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
         from atomate2.dmax.jobs.dma_parser import DmaParserMaker
-        # generate amplitude list
-        amps = np.linspace(self.min_amp_pc, self.max_amp_pc, self.n_amps)
-        rmse_vals = []
-        r2_vals = []
-        parser_jobs = []
-        all_jobs = []
-        for amp in amps:
-            # create DMA input with specified amplitude
-            dma_input_job = DmaInputMaker(osc_amp_pc=float(amp)).make(restart_file)
-            all_jobs.append(dma_input_job)
-            # run simulation
-            if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY:
-                run_job = LammpsLocalRunMaker().make(dma_input_job.output)
-            else:
-                run_job = LammpsSlurmRunMaker().make(dma_input_job.output)
-            all_jobs.append(run_job)
-            # parse results
-            parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)
-            all_jobs.append(parser_job)
-            parser_jobs.append(parser_job)
+        parser_jobs: list = []
+        all_jobs: list = []
+        # if existing_dirs provided, parse those instead of launching new jobs
+        if self.existing_dirs:
+            from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
+            amps = list(self.existing_dirs.keys())
+            for amp in amps:
+                for d in self.existing_dirs[amp]:
+                    input_doc = DmaxLammpsInputDocument(
+                        input_dir=d, data_file='', input_file='in.lammps', slurm_file=''
+                    )
+                    run_doc = DmaxLammpsRunDocument(
+                        job_id='existing', restart_file=os.path.join(d, 'restart.equil')
+                    )
+                    parser_job = DmaParserMaker().make(input_doc, run_doc)
+                    all_jobs.append(parser_job)
+                    parser_jobs.append(parser_job)
+        else:
+            amps = np.linspace(self.min_amp_pc, self.max_amp_pc, self.n_amps)
+            for amp in amps:
+                dma_input_job = DmaInputMaker(osc_amp_pc=float(amp)).make(restart_file)
+                all_jobs.append(dma_input_job)
+                if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY:
+                    run_job = LammpsLocalRunMaker().make(dma_input_job.output)
+                else:
+                    run_job = LammpsSlurmRunMaker().make(dma_input_job.output)
+                all_jobs.append(run_job)
+                parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)
+                all_jobs.append(parser_job)
+                parser_jobs.append(parser_job)
         # post-process: plot and select optimal using a dedicated job
+        amps_list = amps if isinstance(amps, list) else amps.tolist()
         plot_maker = StrainConvergencePlotMaker()
-        conv_job = plot_maker.make(
-            [pj.output for pj in parser_jobs],  # list of parsed DMA documents
-            amps.tolist(),
-        )
+        conv_job = plot_maker.make([pj.output for pj in parser_jobs], amps_list)
         all_jobs.append(conv_job)
-        return Flow(
-            all_jobs,
-            conv_job.output,
-            name=self.name,
-        )
+        return Flow(all_jobs, conv_job.output, name=self.name)
 
 
 @dataclass
