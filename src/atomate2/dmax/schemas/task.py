@@ -195,3 +195,11 @@ class DmaxGlassTransitionFlowDocument(BaseModel):
     glass_transition_temp: float = Field(..., description="Estimated glass transition temperature (K)")
     plot: str = Field(..., description="Path to plot of moduli and tan delta vs temperature with Tg annotation")
     data_csv: str = Field(..., description="Path to CSV file containing moduli and Poisson ratio data per temperature")
+
+class DmaxMasterCurveFlowDocument(BaseModel):
+    """Document for master curve construction from DMA data"""
+    temperatures: list[float] = Field(..., description="Temperatures tested (K)")
+    freqs_ghz: list[float] = Field(..., description="Frequencies tested (GHz)")
+    data_csv: str = Field(..., description="Path to CSV with all DMA metrics per temp and freq")
+    master_plot_wlf1: str = Field(..., description="Path to master curve plot using WLF params (C1=17.44, C2=51.6)")
+    master_plot_wlf2: str = Field(..., description="Path to master curve plot using WLF params (C1=8.86, C2=101.6)")

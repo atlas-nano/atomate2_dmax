@@ -29,9 +29,11 @@ from atomate2.dmax.schemas.task import (
     DmaxNumCyclesConvergenceFlowDocument,
     DmaxErrorAnalysisFlowDocument,
     DmaxGlassTransitionFlowDocument,
+    DmaxMasterCurveFlowDocument,
 )
 from atomate2.dmax.jobs.num_cycles_convergence import NumCyclesConvergenceMaker
 from atomate2.dmax.jobs.glass_transition import GlassTransitionPlotMaker
+from atomate2.dmax.jobs.master_curve import MasterCurvePlotMaker
 import numpy as np  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 
@@ -422,5 +424,54 @@ class GlassTransitionTemperatureFlow(Maker):
                 parser_jobs.append(parser)
         # plot Tg
         plot_job = GlassTransitionPlotMaker().make([p.output for p in parser_jobs], temps)
+        all_jobs.append(plot_job)
+        return Flow(all_jobs, plot_job.output, name=self.name)
+
+
+@dataclass
+class MasterCurveFlow(Maker):
+    """Flow to construct a master curve over temperatures and frequencies"""
+    name: str = 'master_curve_flow'
+    osc_amp_pc: float = 25.0
+    num_cycles: int = 5
+    reference_temp: float | None = None
+    temp_range: tuple[float, float] = (200.0, 400.0)
+    n_temps: int = 7
+    freqs_ghz: list[float] = field(default_factory=lambda: np.logspace(np.log10(10.0), np.log10(100.0), 15))
+    run_locally: bool = False
+    existing_dirs: dict[tuple[float, float], list[str]] | None = None
+
+    def make(self, restart_file: str | None = None) -> Flow:
+        all_jobs: list = []
+        parser_outputs: list = []
+        # determine temperatures and reference
+        if self.reference_temp is None:
+            temps = list(np.linspace(self.temp_range[0], self.temp_range[1], self.n_temps))
+            ref_temp = sum(self.temp_range) / 2.0
+        else:
+            temps = list(np.linspace(self.temp_range[0], self.temp_range[1], self.n_temps))
+            ref_temp = self.reference_temp
+        freqs = self.freqs_ghz
+        from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
+        for T in temps:
+            for fghz in freqs:
+                key = (T, fghz)
+                if self.existing_dirs and key in self.existing_dirs:
+                    for d in self.existing_dirs[key]:
+                        input_doc = DmaxLammpsInputDocument(input_dir=d, data_file='', input_file='in.lammps', slurm_file='')
+                        run_doc = DmaxLammpsRunDocument(job_id='existing', restart_file=os.path.join(d, 'restart.equil'))
+                        parser = DmaParserMaker().make(input_doc, run_doc)
+                        all_jobs.append(parser)
+                        parser_outputs.append(parser.output)
+                else:
+                    dma_input = DmaInputMaker(osc_amp_pc=self.osc_amp_pc, num_cycles=self.num_cycles, frequency=fghz * 1e9).make(restart_file)  # type: ignore
+                    all_jobs.append(dma_input)
+                    run_job = (LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY else LammpsSlurmRunMaker()).make(dma_input.output)
+                    all_jobs.append(run_job)
+                    parser = DmaParserMaker().make(dma_input.output, run_job.output)
+                    all_jobs.append(parser)
+                    parser_outputs.append(parser.output)
+        # plot master curve
+        plot_job = MasterCurvePlotMaker().make(parser_outputs, temps, freqs, ref_temp)
         all_jobs.append(plot_job)
         return Flow(all_jobs, plot_job.output, name=self.name)
