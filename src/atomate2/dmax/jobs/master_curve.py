@@ -47,14 +47,18 @@ class MasterCurvePlotMaker(Maker):
         # master curve plot
         plots = {}
         plt.figure(figsize=(6,4))
-        # scatter data
-        for i, T in enumerate(temps):
-            shifted = freqs_hz * 1.0
-            plt.scatter(shifted, storages[i], color='gray', alpha=0.3)
+        # scatter shifted data points (master curve)
+        original_x = []
+        original_y = []
+        for i in range(n_temps):
+            # compute shift factor using WLF eqn (positive sign per image)
+            # note: will use C1,C2 inside loop later; here just gather unshifted storage positions for reference
+            pass  # placeholder; actual scatter below per WLF curves
         # for each WLF set, shift and interpolate
         for key, (C1, C2) in wlf_params.items():
             # compute shift factors
-            aT = 10 ** (-C1 * (temps - reference_temp) / (C2 + temps - reference_temp))
+            # use WLF: log10(aT) = C1*(T - T_ref)/(C2 + (T - T_ref))
+            aT = 10 ** (C1 * (temps - reference_temp) / (C2 + temps - reference_temp))
             # aggregate shifted data
             x = np.concatenate([freqs_hz * aT_i for aT_i in aT])
             y = np.concatenate([storages[i] for i in range(n_temps)])
@@ -70,7 +74,12 @@ class MasterCurvePlotMaker(Maker):
             y_log = interp_fn(x_log)
             x_plot = 10 ** x_log
             y_plot = 10 ** y_log
-            plt.plot(x_plot, y_plot, label=f'{key}')
+            # plot master curve line
+            plt.plot(x_plot, y_plot, label=f'{key} master')
+            # distinguish extrapolated region (< min original shifted freq)
+            orig_min = min(freqs_hz * aT)
+            mask_extrap = x_plot < orig_min
+            plt.scatter(x_plot[mask_extrap], y_plot[mask_extrap], color='red', marker='x', s=20, label=f'{key} extrapolated' if key=='WLF1' else None)
             plots[key] = f'{key}_master_curve.png'
             plt.savefig(os.path.join(cwd, plots[key]))
         plt.xscale('log')
