@@ -475,3 +475,71 @@ class MasterCurveFlow(Maker):
         plot_job = MasterCurvePlotMaker().make(parser_outputs, temps, freqs, ref_temp)
         all_jobs.append(plot_job)
         return Flow(all_jobs, plot_job.output, name=self.name)
+
+
+@dataclass
+class FullGlassTemperatureFlow(Maker):
+    """Run full workflow up to glass transition analysis"""
+    name: str = 'full_glass_temperature_flow'
+    run_locally: bool = False
+    error_freqs_ghz: list[float] = field(default_factory=lambda: list(np.linspace(0.1, 100.0, 5)))
+    error_n_sims: int = 10
+
+    def make(self) -> Flow:
+        # 1) generate structure and forcefield
+        data_flow = BaseDataGenerationFlow(run_locally=self.run_locally).make()
+        # 2) structure equilibration
+        struct_flow = StructureEquilibrationFlow(run_locally=self.run_locally).make()
+        restart = struct_flow.output.restart_file
+        # 3) strain convergence
+        strain_flow = StrainSizeConvergenceFlow(run_locally=self.run_locally).make(restart)
+        optimal_amp = strain_flow.output.optimal_osc_amp_pc
+        # 4) cycles convergence
+        num_flow = NumCyclesConvergenceFlow(threshold=0.01).make(restart)
+        optimal_cycles = num_flow.output.cycle_convergence.optimal_num_cycles
+        # 5) error analysis
+        error_flow = ErrorAnalysisFlow(
+            osc_amp_pc=optimal_amp,
+            num_cycles=optimal_cycles,
+            freqs_ghz=self.error_freqs_ghz,
+            n_sims=self.error_n_sims,
+            run_locally=self.run_locally
+        ).make(restart)
+        # 6) glass transition
+        glass_flow = GlassTransitionTemperatureFlow(
+            osc_amp_pc=optimal_amp,
+            num_cycles=optimal_cycles,
+            run_locally=self.run_locally
+        ).make(restart)
+        # assemble
+        return Flow(
+            [data_flow, struct_flow, strain_flow, num_flow, error_flow, glass_flow],
+            glass_flow.output,
+            name=self.name,
+        )
+
+
+@dataclass
+class FullDmaxFlow(FullGlassTemperatureFlow):
+    """Run full DMAx workflow including master curve construction"""
+    name: str = 'full_dmax_flow'
+
+    def make(self) -> Flow:
+        full_flow = super().make()
+        # reuse last glass_flow output
+        restart = full_flow.jobs[-1].output.restart_file
+        optimal_amp = full_flow.jobs[2].output.optimal_osc_amp_pc
+        optimal_cycles = full_flow.jobs[3].output.cycle_convergence.optimal_num_cycles
+        glass_temp = full_flow.jobs[5].output.glass_transition_temp
+        # 7) master curve
+        master_flow = MasterCurveFlow(
+            osc_amp_pc=optimal_amp,
+            num_cycles=optimal_cycles,
+            reference_temp=glass_temp,
+            run_locally=self.run_locally
+        ).make(restart)
+        return Flow(
+            full_flow.jobs + [master_flow],
+            master_flow.output,
+            name=self.name,
+        )
