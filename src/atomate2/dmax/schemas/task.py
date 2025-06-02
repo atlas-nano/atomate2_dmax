@@ -172,3 +172,16 @@ class DmaxNumCyclesConvergenceFlowDocument(BaseModel):
     plot: str = Field(
         ..., description="Path to plot of tan δ vs number of cycles"
     )
+
+class DmaxErrorAnalysisFlowDocument(BaseModel):
+    """Document for error analysis over frequencies"""
+    freqs_ghz: list[float] = Field(..., description="Frequencies tested (GHz)")
+    storage_mean: list[float] = Field(..., description="Mean storage modulus at each frequency (MPa)")
+    storage_std: list[float] = Field(..., description="Std dev of storage modulus at each frequency (MPa)")
+    loss_mean: list[float] = Field(..., description="Mean loss modulus at each frequency (MPa)")
+    loss_std: list[float] = Field(..., description="Std dev of loss modulus at each frequency (MPa)")
+    tan_mean: list[float] = Field(..., description="Mean loss tangent at each frequency")
+    tan_std: list[float] = Field(..., description="Std dev of loss tangent at each frequency")
+    storage_plot: str = Field(..., description="Path to storage modulus vs frequency plot")
+    loss_plot: str = Field(..., description="Path to loss modulus vs frequency plot")
+    tan_plot: str = Field(..., description="Path to loss tangent vs frequency plot")

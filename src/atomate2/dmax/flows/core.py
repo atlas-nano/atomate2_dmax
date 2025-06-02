@@ -19,6 +19,7 @@ from atomate2.dmax.jobs.structure_equil_parser import StructureEquilParserMaker
 from atomate2.dmax.jobs.strain_convergence import StrainConvergencePlotMaker
 from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker  # import DMA input maker
 from atomate2.dmax.jobs.dma_parser import DmaParserMaker  # import DMA parser maker
+from atomate2.dmax.jobs.error_analysis import ErrorAnalysisPlotMaker
 from atomate2 import SETTINGS
 from atomate2.dmax.schemas.task import (
     DmaxDataGenerationFlowDocument,
@@ -26,6 +27,7 @@ from atomate2.dmax.schemas.task import (
     DmaxDmaFlowDocument,
     DmaxStrainSizeConvergenceFlowDocument,
     DmaxNumCyclesConvergenceFlowDocument,
+    DmaxErrorAnalysisFlowDocument,
 )
 from atomate2.dmax.jobs.num_cycles_convergence import NumCyclesConvergenceMaker
 import numpy as np  # type: ignore
@@ -301,3 +303,64 @@ class NumCyclesConvergenceFlow(Maker):
             },
             name=self.name,
         )
+
+
+@dataclass
+class ErrorAnalysisFlow(Maker):
+    """
+    Flow to perform error analysis of DMA at different frequencies.
+    """
+    name: str = 'error_analysis_flow'
+    osc_amp_pc: float = 25.0
+    num_cycles: int = 5
+    freqs_ghz: list[float] = field(default_factory=lambda: [20.0, 30.0, 40.0])
+    n_sims: int = 5
+    run_locally: bool = False
+    existing_dirs: dict[float, list[str]] | None = None  # map frequency to list of dirs with existing runs
+
+    def make(self, restart_file: str | None = None) -> Flow:
+        all_jobs: list = []
+        parser_groups: list[list] = []
+        # if user provided existing directories, parse without running new sims
+        if self.existing_dirs:
+            freqs = list(self.existing_dirs.keys())
+            from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
+            for freq, dirs in self.existing_dirs.items():
+                group = []
+                for d in dirs:
+                    # construct input/run docs pointing to existing run dir
+                    input_doc = DmaxLammpsInputDocument(
+                        input_dir=d, data_file='', input_file='in.lammps', slurm_file=''
+                    )
+                    run_doc = DmaxLammpsRunDocument(job_id='existing', restart_file=os.path.join(d, 'restart.equil'))
+                    parser = DmaParserMaker().make(input_doc, run_doc)
+                    all_jobs.append(parser)
+                    group.append(parser)
+                parser_groups.append(group)
+        else:
+            freqs = self.freqs_ghz
+            for freq in freqs:
+                freq_group = []
+                for i in range(self.n_sims):
+                    dma_input = DmaInputMaker(
+                        osc_amp_pc=self.osc_amp_pc,
+                        num_cycles=self.num_cycles,
+                        frequency=freq * 1e9,
+                        error_analysis=True,
+                    ).make(restart_file)  # type: ignore
+                    all_jobs.append(dma_input)
+                    run_job = (
+                        LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
+                        else LammpsSlurmRunMaker()
+                    ).make(dma_input.output)
+                    all_jobs.append(run_job)
+                    parser = DmaParserMaker().make(dma_input.output, run_job.output)
+                    all_jobs.append(parser)
+                    freq_group.append(parser)
+                parser_groups.append(freq_group)
+        # plot error metrics
+        plot_job = ErrorAnalysisPlotMaker().make(
+            [[p.output for p in group] for group in parser_groups], freqs
+        )
+        all_jobs.append(plot_job)
+        return Flow(all_jobs, plot_job.output, name=self.name)
