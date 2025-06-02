@@ -16,6 +16,7 @@ from atomate2.dmax.jobs.structure_generation import PSPStructureMaker
 from atomate2.dmax.jobs.forcefield_param import ForceFieldMaker
 from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
 from atomate2.dmax.jobs.structure_equil_parser import StructureEquilParserMaker
+from atomate2.dmax.jobs.strain_convergence import StrainConvergencePlotMaker
 from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker  # import DMA input maker
 from atomate2.dmax.jobs.dma_parser import DmaParserMaker  # import DMA parser maker
 from atomate2 import SETTINGS
@@ -23,7 +24,12 @@ from atomate2.dmax.schemas.task import (
     DmaxDataGenerationFlowDocument,
     DmaxStructureEquilibrationFlowDocument,
     DmaxDmaFlowDocument,
+    DmaxStrainSizeConvergenceFlowDocument,
+    DmaxNumCyclesConvergenceFlowDocument,
 )
+from atomate2.dmax.jobs.num_cycles_convergence import NumCyclesConvergenceMaker
+import numpy as np  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
 
 
 @dataclass
@@ -207,6 +213,91 @@ class DmaFlow(Maker):
                 'job_id': run_job.output.job_id,
                 'restart_file': run_job.output.restart_file,
                 'parser_output': parser_job.output,
+            },
+            name=self.name,
+        )
+
+
+@dataclass
+class StrainSizeConvergenceFlow(Maker):
+    """
+    Flow to test convergence of DMA results over varying oscillation amplitudes.
+    """
+    name: str = 'strain_size_convergence_flow'
+    run_locally: bool = False
+    n_amps: int = 5
+    min_amp_pc: float = 0.1
+    max_amp_pc: float = 50.0
+
+    def make(self, restart_file: str) -> Flow:
+        from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker
+        from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
+        from atomate2.dmax.jobs.dma_parser import DmaParserMaker
+        # generate amplitude list
+        amps = np.linspace(self.min_amp_pc, self.max_amp_pc, self.n_amps)
+        rmse_vals = []
+        r2_vals = []
+        parser_jobs = []
+        all_jobs = []
+        for amp in amps:
+            # create DMA input with specified amplitude
+            dma_input_job = DmaInputMaker(osc_amp_pc=float(amp)).make(restart_file)
+            all_jobs.append(dma_input_job)
+            # run simulation
+            if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY:
+                run_job = LammpsLocalRunMaker().make(dma_input_job.output)
+            else:
+                run_job = LammpsSlurmRunMaker().make(dma_input_job.output)
+            all_jobs.append(run_job)
+            # parse results
+            parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)
+            all_jobs.append(parser_job)
+            parser_jobs.append(parser_job)
+        # post-process: plot and select optimal using a dedicated job
+        plot_maker = StrainConvergencePlotMaker()
+        conv_job = plot_maker.make(
+            [pj.output for pj in parser_jobs],  # list of parsed DMA documents
+            amps.tolist(),
+        )
+        all_jobs.append(conv_job)
+        return Flow(
+            all_jobs,
+            conv_job.output,
+            name=self.name,
+        )
+
+
+@dataclass
+class NumCyclesConvergenceFlow(Maker):
+    """
+    Flow that re-parses a DMA run and analyzes tanδ convergence over cycle count.
+    """
+    name: str = 'num_cycles_convergence_flow'
+    threshold: float = 0.01
+
+    def make(self, restart_file: str) -> Flow:
+        from atomate2.dmax.jobs.dma_parser import DmaParserMaker
+        from atomate2.dmax.jobs.num_cycles_convergence import NumCyclesConvergenceMaker
+        from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
+        # work directory
+        work_dir = os.path.dirname(restart_file)
+        # full parse
+        input_doc = DmaxLammpsInputDocument(
+            input_dir=work_dir,
+            data_file='', input_file='in.lammps', slurm_file=''
+        )
+        run_doc = DmaxLammpsRunDocument(job_id='local', restart_file=restart_file)
+        full_parse = DmaParserMaker().make(input_doc, run_doc)
+        full_parse.append_name(' full_parse')
+        # cycle convergence
+        cycle_job = NumCyclesConvergenceMaker(threshold=self.threshold).make(work_dir)
+        cycle_job.append_name(' cycle_conv')
+        # assemble
+        return Flow(
+            [full_parse, cycle_job],
+            output={
+                'full_parser': full_parse.output,
+                'cycle_convergence': cycle_job.output,
             },
             name=self.name,
         )

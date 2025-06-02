@@ -46,7 +46,7 @@ velocity         all create ${temperature} ${seed} dist gaussian
 fix              NPT_Equil all npt temp ${temperature} ${temperature} 400 iso ${pressure} ${pressure} 5000.0
 thermo           1000
 dump             Equil_data all custom 1000 ${sname}.${temperature}K.equil.lammpstrj id type xu yu zu vx vy vz fx fy fz
-run              {{ npt_steps | default(100000) }}
+run              {{ npt_steps | default(10000) }}
 unfix            NPT_Equil
 undump           Equil_data
 

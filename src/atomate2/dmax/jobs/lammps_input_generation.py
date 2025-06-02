@@ -165,9 +165,10 @@ class DmaInputMaker(LammpsInputMakerBase):
     runtime: int = 0    # will be computed by num_cycles
     thermo: int = 0     # will be computed by num_cycles
     seed: int = 12345678
-    frequency: float = 25e9  # oscillation frequency in Hz
-    num_cycles: int = 2     # number of oscillation cycles to run
+    frequency: float = 50e9  # oscillation frequency in Hz
+    num_cycles: int = 3     # number of oscillation cycles to run
     osc_amp_pc: float = 20  # oscillation amplitude in percent of box length
+    npt_steps: int = 10000
 
     @job(output_schema=DmaxLammpsInputDocument)
     def make(self, restart_file: str, data_file: str = None) -> DmaxLammpsInputDocument:

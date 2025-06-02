@@ -146,3 +146,29 @@ class DmaxDmaFlowDocument(BaseModel):
     job_id: Optional[Any] = Field(None, description="SLURM job ID or 'local' (OutputReference)")
     restart_file: Optional[Any] = Field(None, description="Restart file path (OutputReference)")
     parser_output: Optional[Any] = Field(None, description="Parsed DMA results (OutputReference)")
+
+class DmaxStrainSizeConvergenceFlowDocument(BaseModel):
+    "Document for strain size convergence analysis"
+    osc_amp_pc: list[float] = Field(..., description="Oscillation amplitudes tested (percent)")
+    rmse: list[float] = Field(..., description="RMSE of sinusoidal fit for each amplitude")
+    r2: list[float] = Field(..., description="R² of sinusoidal fit for each amplitude")
+    plot: str = Field(..., description="Path to RMSE and R² vs amplitude plot")
+    optimal_osc_amp_pc: float = Field(..., description="Selected optimal oscillation amplitude (percent)")
+
+class DmaxNumCyclesConvergenceFlowDocument(BaseModel):
+    """Document for number-of-cycles convergence analysis"""
+    num_cycles: list[int] = Field(
+        ..., description="List of cycle counts analyzed"
+    )
+    tan_delta: list[float] = Field(
+        ..., description="List of tan δ values for each cycle count"
+    )
+    threshold: float = Field(
+        ..., description="Relative convergence threshold used"
+    )
+    optimal_num_cycles: int = Field(
+        ..., description="Minimum number of cycles for convergence"
+    )
+    plot: str = Field(
+        ..., description="Path to plot of tan δ vs number of cycles"
+    )
