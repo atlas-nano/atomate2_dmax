@@ -28,8 +28,10 @@ from atomate2.dmax.schemas.task import (
     DmaxStrainSizeConvergenceFlowDocument,
     DmaxNumCyclesConvergenceFlowDocument,
     DmaxErrorAnalysisFlowDocument,
+    DmaxGlassTransitionFlowDocument,
 )
 from atomate2.dmax.jobs.num_cycles_convergence import NumCyclesConvergenceMaker
+from atomate2.dmax.jobs.glass_transition import GlassTransitionPlotMaker
 import numpy as np  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 
@@ -367,5 +369,43 @@ class ErrorAnalysisFlow(Maker):
         plot_job = ErrorAnalysisPlotMaker().make(
             [[p.output for p in group] for group in parser_groups], freqs
         )
+        all_jobs.append(plot_job)
+        return Flow(all_jobs, plot_job.output, name=self.name)
+
+
+@dataclass
+class GlassTransitionTemperatureFlow(Maker):
+    """Flow to estimate glass transition temperature from DMA across temperatures"""
+    name: str = 'glass_transition_flow'
+    osc_amp_pc: float = 25.0  # use optimal defaults
+    num_cycles: int = 3
+    frequency_ghz: float = 80.0
+    temp_range: tuple[float, float] = (200.0, 400.0)  # plausible Tg range in K
+    n_temps: int = 3  # provides ~25K spacing over 200-400K
+    run_locally: bool = False
+
+    def make(self, restart_file: str) -> Flow:
+        all_jobs: list = []
+        temps = list(np.linspace(self.temp_range[0], self.temp_range[1], self.n_temps))
+        parser_jobs: list = []
+        for T in temps:
+            # spawn DMA flows at each temperature
+            dma_input = DmaInputMaker(
+                osc_amp_pc=self.osc_amp_pc,
+                num_cycles=self.num_cycles,
+                frequency=self.frequency_ghz * 1e9,
+            ).make(restart_file)  # type: ignore
+            all_jobs.append(dma_input)
+            # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
+            run_job = (
+                LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
+                else LammpsSlurmRunMaker()
+            ).make(dma_input.output)
+            all_jobs.append(run_job)
+            parser = DmaParserMaker().make(dma_input.output, run_job.output)
+            all_jobs.append(parser)
+            parser_jobs.append(parser)
+        # plot Tg
+        plot_job = GlassTransitionPlotMaker().make([p.output for p in parser_jobs], temps)
         all_jobs.append(plot_job)
         return Flow(all_jobs, plot_job.output, name=self.name)

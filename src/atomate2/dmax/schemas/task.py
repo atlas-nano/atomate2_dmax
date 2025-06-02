@@ -185,3 +185,12 @@ class DmaxErrorAnalysisFlowDocument(BaseModel):
     storage_plot: str = Field(..., description="Path to storage modulus vs frequency plot")
     loss_plot: str = Field(..., description="Path to loss modulus vs frequency plot")
     tan_plot: str = Field(..., description="Path to loss tangent vs frequency plot")
+
+class DmaxGlassTransitionFlowDocument(BaseModel):
+    """Document for glass transition temperature analysis"""
+    temperatures: list[float] = Field(..., description="Temperatures tested (K)")
+    storage_modulus: list[float] = Field(..., description="Storage modulus at each temperature (MPa)")
+    loss_modulus: list[float] = Field(..., description="Loss modulus at each temperature (MPa)")
+    tan_delta: list[float] = Field(..., description="Loss tangent at each temperature")
+    glass_transition_temp: float = Field(..., description="Estimated glass transition temperature (K)")
+    plot: str = Field(..., description="Path to plot of moduli and tan delta vs temperature with Tg annotation")
