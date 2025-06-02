@@ -381,30 +381,45 @@ class GlassTransitionTemperatureFlow(Maker):
     num_cycles: int = 3
     frequency_ghz: float = 80.0
     temp_range: tuple[float, float] = (200.0, 400.0)  # plausible Tg range in K
-    n_temps: int = 3  # provides ~25K spacing over 200-400K
+    n_temps: int = 9  # provides ~25K spacing over 200-400K
     run_locally: bool = False
+    existing_dirs: dict[float, list[str]] | None = None  # optional mapping from temperature to directories
 
-    def make(self, restart_file: str) -> Flow:
+    def make(self, restart_file: str | None = None) -> Flow:
         all_jobs: list = []
-        temps = list(np.linspace(self.temp_range[0], self.temp_range[1], self.n_temps))
         parser_jobs: list = []
-        for T in temps:
-            # spawn DMA flows at each temperature
-            dma_input = DmaInputMaker(
-                osc_amp_pc=self.osc_amp_pc,
-                num_cycles=self.num_cycles,
-                frequency=self.frequency_ghz * 1e9,
-            ).make(restart_file)  # type: ignore
-            all_jobs.append(dma_input)
-            # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
-            run_job = (
-                LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
-                else LammpsSlurmRunMaker()
-            ).make(dma_input.output)
-            all_jobs.append(run_job)
-            parser = DmaParserMaker().make(dma_input.output, run_job.output)
-            all_jobs.append(parser)
-            parser_jobs.append(parser)
+        # determine temperature list
+        if self.existing_dirs:
+            temps = list(self.existing_dirs.keys())
+            from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
+            for T in temps:
+                for d in self.existing_dirs[T]:
+                    input_doc = DmaxLammpsInputDocument(
+                        input_dir=d, data_file='', input_file='in.lammps', slurm_file=''
+                    )
+                    run_doc = DmaxLammpsRunDocument(job_id='existing', restart_file=os.path.join(d, 'restart.equil'))
+                    parser = DmaParserMaker().make(input_doc, run_doc)
+                    all_jobs.append(parser)
+                    parser_jobs.append(parser)
+        else:
+            temps = list(np.linspace(self.temp_range[0], self.temp_range[1], self.n_temps))
+            for T in temps:
+                # spawn DMA flows at each temperature
+                dma_input = DmaInputMaker(
+                    osc_amp_pc=self.osc_amp_pc,
+                    num_cycles=self.num_cycles,
+                    frequency=self.frequency_ghz * 1e9,
+                ).make(restart_file)  # type: ignore
+                all_jobs.append(dma_input)
+                # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
+                run_job = (
+                    LammpsLocalRunMaker() if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
+                    else LammpsSlurmRunMaker()
+                ).make(dma_input.output)
+                all_jobs.append(run_job)
+                parser = DmaParserMaker().make(dma_input.output, run_job.output)
+                all_jobs.append(parser)
+                parser_jobs.append(parser)
         # plot Tg
         plot_job = GlassTransitionPlotMaker().make([p.output for p in parser_jobs], temps)
         all_jobs.append(plot_job)
