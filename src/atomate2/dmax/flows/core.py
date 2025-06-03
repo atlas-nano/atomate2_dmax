@@ -462,7 +462,7 @@ class MasterCurveFlow(Maker):
     reference_temp: float | None = None
     temp_range: tuple[float, float] = (200.0, 400.0)
     n_temps: int = 7
-    freqs_ghz: list[float] = field(default_factory=lambda: np.logspace(np.log10(10.0), np.log10(100.0), 15))
+    freqs_ghz: list[float] = field(default_factory=lambda: list(np.logspace(np.log10(10.0), np.log10(100.0), 15)))
     run_locally: bool = False
     existing_dirs: dict[tuple[float, float], list[str]] | None = None
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
@@ -606,27 +606,98 @@ class FullGlassTemperatureFlow(Maker):
 class FullDmaxFlow(FullGlassTemperatureFlow):
     """Run full DMAx workflow including master curve construction"""
     name: str = 'full_dmax_flow'
+    # GPU settings (inherited polymer and execution parameters available)
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
     gpu_count: int = 1  # number of GPUs to use if using GPU
+    # master curve parameters
+    reference_temp: float | None = None
+    temp_range: tuple[float, float] = (200.0, 400.0)
+    n_temps: int = 7
+    freqs_ghz: list[float] = field(default_factory=lambda: list(np.logspace(np.log10(10.0), np.log10(100.0), 15)))
+    existing_dirs: dict[tuple[float, float], list[str]] | None = None  # optional pre-run directories
 
     def make(self) -> Flow:
-        full_flow = super().make()
-        # reuse last glass_flow output
-        restart = full_flow.jobs[-1].output.restart_file
-        optimal_amp = full_flow.jobs[2].output.optimal_osc_amp_pc
-        optimal_cycles = full_flow.jobs[3].output.cycle_convergence.optimal_num_cycles
-        glass_temp = full_flow.jobs[5].output.glass_transition_temp
-        # 7) master curve
+        # 1) generate structure and forcefield
+        data_flow = BaseDataGenerationFlow(
+            smiles=self.smiles,
+            left_cap=self.left_cap,
+            right_cap=self.right_cap,
+            length=self.length,
+            num_molecules=self.num_molecules,
+            density=self.density,
+            box_type=self.box_type,
+            out_dir=self.out_dir,
+            num_conf=self.num_conf,
+            loop=self.loop,
+            forcefield=self.forcefield,
+            generator=self.generator,
+            include_impropers=self.include_impropers,
+        ).make()
+        # 2) structure equilibration
+        struct_flow = StructureEquilibrationFlow(
+            smiles=self.smiles,
+            left_cap=self.left_cap,
+            right_cap=self.right_cap,
+            length=self.length,
+            num_molecules=self.num_molecules,
+            density=self.density,
+            box_type=self.box_type,
+            out_dir=self.out_dir,
+            num_conf=self.num_conf,
+            loop=self.loop,
+            forcefield=self.forcefield,
+            generator=self.generator,
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count,
+        ).make()
+        restart = struct_flow.output.restart_file
+        # 3) strain convergence
+        strain_flow = StrainSizeConvergenceFlow(
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count,
+        ).make(restart)
+        optimal_amp = strain_flow.output.optimal_osc_amp_pc
+        # 4) cycles convergence
+        num_flow = NumCyclesConvergenceFlow(threshold=0.01).make(restart)
+        optimal_cycles = num_flow.output.cycle_convergence.optimal_num_cycles
+        # 5) error analysis
+        error_flow = ErrorAnalysisFlow(
+            osc_amp_pc=optimal_amp,
+            num_cycles=optimal_cycles,
+            freqs_ghz=self.error_freqs_ghz,
+            n_sims=self.error_n_sims,
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count,
+        ).make(restart)
+        # 6) glass transition
+        glass_flow = GlassTransitionTemperatureFlow(
+            osc_amp_pc=optimal_amp,
+            num_cycles=optimal_cycles,
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count,
+        ).make(restart)
+        # 7) master curve construction
+        # determine reference temperature for master curve
+        ref_temp = self.reference_temp or glass_flow.output.glass_transition_temp
         master_flow = MasterCurveFlow(
             osc_amp_pc=optimal_amp,
             num_cycles=optimal_cycles,
-            reference_temp=glass_temp,
+            reference_temp=ref_temp,
+            temp_range=self.temp_range,
+            n_temps=self.n_temps,
+            freqs_ghz=self.freqs_ghz,
             run_locally=self.run_locally,
+            existing_dirs=self.existing_dirs,
             use_gpu=self.use_gpu,
-            gpu_count=self.gpu_count
+            gpu_count=self.gpu_count,
         ).make(restart)
+        # assemble full workflow
         return Flow(
-            full_flow.jobs + [master_flow],
+            [data_flow, struct_flow, strain_flow, num_flow, error_flow, glass_flow, master_flow],
             master_flow.output,
             name=self.name,
         )
