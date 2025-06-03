@@ -507,7 +507,23 @@ class MasterCurveFlow(Maker):
 @dataclass
 class FullGlassTemperatureFlow(Maker):
     """Run full workflow up to glass transition analysis"""
+    # flow parameters
     name: str = 'full_glass_temperature_flow'
+    # polymer structure parameters
+    smiles: str = "[*]CC[*]"
+    left_cap: str = "C"
+    right_cap: str = "C"
+    length: int = 10
+    num_molecules: int = 5
+    density: float = 0.8
+    box_type: str = "c"
+    out_dir: Path | None = None
+    num_conf: int = 1
+    loop: bool = False
+    forcefield: str = 'auto'
+    generator: str = 'auto'
+    include_impropers: bool = False
+    # execution parameters
     run_locally: bool = False
     error_freqs_ghz: list[float] = field(default_factory=lambda: list(np.linspace(0.1, 100.0, 5)))
     error_n_sims: int = 10
@@ -516,12 +532,46 @@ class FullGlassTemperatureFlow(Maker):
 
     def make(self) -> Flow:
         # 1) generate structure and forcefield
-        data_flow = BaseDataGenerationFlow(run_locally=self.run_locally, use_gpu=self.use_gpu, gpu_count=self.gpu_count).make()
+        data_flow = BaseDataGenerationFlow(
+            smiles=self.smiles,
+            left_cap=self.left_cap,
+            right_cap=self.right_cap,
+            length=self.length,
+            num_molecules=self.num_molecules,
+            density=self.density,
+            box_type=self.box_type,
+            out_dir=self.out_dir,
+            num_conf=self.num_conf,
+            loop=self.loop,
+            forcefield=self.forcefield,
+            generator=self.generator,
+            include_impropers=self.include_impropers,
+        ).make()
         # 2) structure equilibration
-        struct_flow = StructureEquilibrationFlow(run_locally=self.run_locally, use_gpu=self.use_gpu, gpu_count=self.gpu_count).make()
+        struct_flow = StructureEquilibrationFlow(
+            smiles=self.smiles,
+            left_cap=self.left_cap,
+            right_cap=self.right_cap,
+            length=self.length,
+            num_molecules=self.num_molecules,
+            density=self.density,
+            box_type=self.box_type,
+            out_dir=self.out_dir,
+            num_conf=self.num_conf,
+            loop=self.loop,
+            forcefield=self.forcefield,
+            generator=self.generator,
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count,
+        ).make()
         restart = struct_flow.output.restart_file
         # 3) strain convergence
-        strain_flow = StrainSizeConvergenceFlow(run_locally=self.run_locally, use_gpu=self.use_gpu, gpu_count=self.gpu_count).make(restart)
+        strain_flow = StrainSizeConvergenceFlow(
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count,
+        ).make(restart)
         optimal_amp = strain_flow.output.optimal_osc_amp_pc
         # 4) cycles convergence
         num_flow = NumCyclesConvergenceFlow(threshold=0.01).make(restart)
@@ -534,7 +584,7 @@ class FullGlassTemperatureFlow(Maker):
             n_sims=self.error_n_sims,
             run_locally=self.run_locally,
             use_gpu=self.use_gpu,
-            gpu_count=self.gpu_count
+            gpu_count=self.gpu_count,
         ).make(restart)
         # 6) glass transition
         glass_flow = GlassTransitionTemperatureFlow(
@@ -542,7 +592,7 @@ class FullGlassTemperatureFlow(Maker):
             num_cycles=optimal_cycles,
             run_locally=self.run_locally,
             use_gpu=self.use_gpu,
-            gpu_count=self.gpu_count
+            gpu_count=self.gpu_count,
         ).make(restart)
         # assemble
         return Flow(
