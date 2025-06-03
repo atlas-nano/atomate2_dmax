@@ -47,9 +47,9 @@ class MasterCurvePlotMaker(Maker):
         # master curve plot
         plots = {}
         plt.figure(figsize=(6,4))
+        # prepare container for combined master curve data
+        combined_curves: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
         # scatter shifted data points (master curve)
-        original_x = []
-        original_y = []
         for i in range(n_temps):
             # compute shift factor using WLF eqn (positive sign per image)
             # note: will use C1,C2 inside loop later; here just gather unshifted storage positions for reference
@@ -62,40 +62,67 @@ class MasterCurvePlotMaker(Maker):
             # aggregate shifted data
             x = np.concatenate([freqs_hz * aT_i for aT_i in aT])
             y = np.concatenate([storages[i] for i in range(n_temps)])
-            # sort by x
+            # prepare data: sort and remove non-positive
             order = np.argsort(x)
-            x_sorted = x[order]
-            y_sorted = y[order]
-            # log-log interpolation
-            interp_fn = interp1d(np.log10(x_sorted), np.log10(y_sorted), kind='cubic', fill_value='extrapolate')
+            xs = x[order]
+            ys = y[order]
+            mask = (xs > 0) & (ys > 0)
+            xs = xs[mask]
+            ys = ys[mask]
+            # aggregate duplicate frequencies by averaging
+            ux, inv = np.unique(xs, return_inverse=True)
+            uy = np.array([ys[inv == i].mean() for i in range(len(ux))])
+            # choose interpolation kind: need at least 4 points for cubic
+            ip_kind = 'cubic' if len(ux) >= 4 else 'linear'
+            # create interpolation in log-log space
+            interp_fn = interp1d(np.log10(ux), np.log10(uy), kind=ip_kind, fill_value='extrapolate')
             xlog_min = -1
-            xlog_max = np.max(np.log10(x_sorted))
+            xlog_max = np.max(np.log10(ux))
             x_log = np.linspace(xlog_min, xlog_max, 200)
             y_log = interp_fn(x_log)
             x_plot = 10 ** x_log
             y_plot = 10 ** y_log
+            orig_min = x.min()
+            # collect for combined plot
+            combined_curves[key] = (x_plot, y_plot, orig_min)
             # plot master curve line
             plt.plot(x_plot, y_plot, label=f'{key} master')
             # distinguish extrapolated region (< min original shifted freq)
-            orig_min = min(freqs_hz * aT)
             mask_extrap = x_plot < orig_min
             plt.scatter(x_plot[mask_extrap], y_plot[mask_extrap], color='red', marker='x', s=20, label=f'{key} extrapolated' if key=='WLF1' else None)
+            # configure plot appearance
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.xlabel(f'Frequency (Hz) shifted to reference temperature ({reference_temp} K)')
+            plt.ylabel('Storage Modulus (MPa)')
+            plt.title(f'{key} Master Curve (WLF C1={C1}, C2={C2})')
+            plt.legend()
+            plt.tight_layout()
             plots[key] = f'{key}_master_curve.png'
             plt.savefig(os.path.join(cwd, plots[key]))
-        plt.xscale('log')
-        plt.yscale('log')
-        plt.xlabel('Frequency (Hz) shifted to T_ref')
-        plt.ylabel('Storage Modulus (MPa)')
-        plt.legend()
+            plt.clf()
+        # plot combined master curves
+        fig2, ax2 = plt.subplots(figsize=(6,4))
+        for key, (x_plot, y_plot, orig_min) in combined_curves.items():
+            ax2.loglog(x_plot, y_plot, label=f'{key} master')
+            if key == 'WLF1':
+                mask_ex = x_plot < orig_min
+                ax2.scatter(x_plot[mask_ex], y_plot[mask_ex], color='red', marker='x', s=20, label=f'{key} extrapolated')
+        ax2.set_xscale('log')
+        ax2.set_yscale('log')
+        ax2.set_xlabel(f'Frequency (Hz) shifted to reference temperature ({reference_temp} K)')
+        ax2.set_ylabel('Storage Modulus (MPa)')
+        ax2.set_title('Combined Master Curve (WLF Shifts)')
+        ax2.legend()
+        fig2.tight_layout()
         master_plot = os.path.join(cwd, 'master_curve_combined.png')
-        plt.tight_layout()
-        plt.savefig(master_plot)
-        plt.close()
+        fig2.savefig(master_plot)
+        plt.close(fig2)
         # return all plots
         return Response(
             output=DmaxMasterCurveFlowDocument(
                 temperatures=temperatures,
-                freqs_ghz=freqs_ghz.tolist(),
+                freqs_ghz=freqs_ghz,
                 data_csv=csv_file,
                 master_plot_wlf1=os.path.join(cwd, plots['WLF1']),
                 master_plot_wlf2=os.path.join(cwd, plots['WLF2']),

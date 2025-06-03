@@ -430,11 +430,12 @@ class GlassTransitionTemperatureFlow(Maker):
         else:
             temps = list(np.linspace(self.temp_range[0], self.temp_range[1], self.n_temps))
             for T in temps:
-                # spawn DMA flows at each temperature
+                # spawn DMA runs at specified temperature T
                 dma_input = DmaInputMaker(
                     osc_amp_pc=self.osc_amp_pc,
                     num_cycles=self.num_cycles,
                     frequency=self.frequency_ghz * 1e9,
+                    temperature=T,
                 ).make(restart_file)  # type: ignore
                 all_jobs.append(dma_input)
                 # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
@@ -531,7 +532,9 @@ class FullGlassTemperatureFlow(Maker):
             num_cycles=optimal_cycles,
             freqs_ghz=self.error_freqs_ghz,
             n_sims=self.error_n_sims,
-            run_locally=self.run_locally
+            run_locally=self.run_locally,
+            use_gpu=self.use_gpu,
+            gpu_count=self.gpu_count
         ).make(restart)
         # 6) glass transition
         glass_flow = GlassTransitionTemperatureFlow(

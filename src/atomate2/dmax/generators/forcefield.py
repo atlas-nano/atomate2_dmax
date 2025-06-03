@@ -41,7 +41,7 @@ def parametrize_ligpargen(amor, output_fname: str | None = None, include_imprope
     return output_fname
 
 
-def parametrize_foyer(amor, forcefield_name: str = "oplsaa", output_fname: str | None = None) -> str:
+def parametrize_foyer(amor, forcefield_name: str = "oplsaa", output_fname: str | None = None, include_impropers: bool = False) -> str:
     """
     Use a PSPBuilderWrapper (`amor`) or a PDB file path to generate a LAMMPS data file via Foyer.
     Returns path to generated .lammps file.
@@ -72,7 +72,7 @@ def parametrize_foyer(amor, forcefield_name: str = "oplsaa", output_fname: str |
     structure_mb = mb_load(pdb_file)
     gmso_top = from_mbuild(structure_mb)
     ff = FoyerFFs.get_ff(forcefield_name).to_gmso_ff()
-    apply(top=gmso_top, forcefields=ff, identify_connections=False)
+    apply(top=gmso_top, forcefields=ff, identify_connections=False, write_impropers=include_impropers)
     # write output file with _foyer suffix
     if output_fname is None:
         output_fname = os.path.join(os.getcwd(), f'amor_{forcefield_name}_foyer.lammps')
@@ -148,7 +148,7 @@ def parametrize_auto(amor, include_impropers: bool = False) -> str:
     # Try Foyer
     print("parametrize_auto: attempting Foyer parametrization...")
     try:
-        path = parametrize_foyer(amor)
+        path = parametrize_foyer(amor, include_impropers=include_impropers)
         print("parametrize_auto: Foyer succeeded ->", path)
         return path
     except Exception as e:

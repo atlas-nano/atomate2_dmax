@@ -83,7 +83,7 @@ class ForceFieldMaker(Maker):
         # mapping generator strings to functions
         gen_funcs = {
             'psp': lambda a: parametrize_ligpargen(a, include_impropers=self.include_impropers),
-            'foyer': lambda a: parametrize_foyer(a),
+            'foyer': lambda a: parametrize_foyer(a, include_impropers=self.include_impropers),
             'pysimm': lambda a: parametrize_gaff2_pysimm(a),
             'antechamber': lambda a: parametrize_gaff2_antechamber(a),
         }

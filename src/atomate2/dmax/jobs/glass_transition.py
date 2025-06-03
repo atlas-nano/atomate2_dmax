@@ -49,30 +49,35 @@ class GlassTransitionPlotMaker(Maker):
             writer.writerow(['temperature', 'storage_modulus', 'loss_modulus', 'tan_delta', 'elastic_modulus', 'poisson_ratio'])
             for T, sm, lm, td, em, pr in zip(temps, storages, losses, tans, elastics, poissons):
                 writer.writerow([T, sm, lm, td, em, pr])
-        # plot curves
+        # plot curves with dual-axis
         plot_file = os.path.join(cwd, 'glass_transition.png')
-        plt.figure()
-        # storage modulus
-        plt.scatter(temps, storages, color='tab:blue', alpha=0.4)
-        plt.plot(temps, storages, color='tab:blue', linestyle='-', label='Storage Modulus')
-        # loss modulus
-        plt.scatter(temps, losses, color='tab:orange', alpha=0.4)
-        plt.plot(temps, losses, color='tab:orange', linestyle='-', label='Loss Modulus')
-        # tan delta
-        plt.scatter(temps, tans, color='tab:green', alpha=0.4)
-        plt.plot(temps, tans, color='tab:green', linestyle='-', label='Loss Tangent')
-        plt.xlabel('Temperature (K)')
-        plt.ylabel('Modulus / Tan δ')
-        plt.legend()
+        fig, ax1 = plt.subplots()
+        # plot storage and loss moduli on left axis
+        ax1.scatter(temps, storages, color='tab:blue', alpha=0.4)
+        ax1.plot(temps, storages, color='tab:blue', linestyle='-', label='Storage Modulus')
+        ax1.scatter(temps, losses, color='tab:orange', alpha=0.4)
+        ax1.plot(temps, losses, color='tab:orange', linestyle='-', label='Loss Modulus')
+        ax1.set_xlabel('Temperature (K)')
+        ax1.set_ylabel('Modulus', color='k')
+        ax1.tick_params(axis='y', labelcolor='k')
+        # plot tan delta on right axis
+        ax2 = ax1.twinx()
+        ax2.scatter(temps, tans, color='tab:green', alpha=0.4)
+        ax2.plot(temps, tans, color='tab:green', linestyle='-', label='Loss Tangent')
+        ax2.set_ylabel('Tan δ', color='tab:green')
+        ax2.tick_params(axis='y', labelcolor='tab:green')
+        # combine legends
+        lines_1, labels_1 = ax1.get_legend_handles_labels()
+        lines_2, labels_2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='best')
         # annotate Tg
         if not np.isnan(glass_temp):
-            plt.axvline(glass_temp, color='r', linestyle='--', label=f'Tg = {glass_temp:.1f} K')
-            # text box
-            plt.text(0.05, 0.95, f'Tg = {glass_temp:.1f} K', transform=plt.gca().transAxes,
+            ax1.axvline(glass_temp, color='r', linestyle='--')
+            ax1.text(0.05, 0.95, f'Tg = {glass_temp:.1f} K', transform=ax1.transAxes,
                      verticalalignment='top', bbox=dict(facecolor='white', alpha=0.6))
-        plt.tight_layout()
-        plt.savefig(plot_file)
-        plt.close()
+        fig.tight_layout()
+        fig.savefig(plot_file)
+        plt.close(fig)
         return Response(
             output=DmaxGlassTransitionFlowDocument(
                 temperatures=temperatures,
