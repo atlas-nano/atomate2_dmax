@@ -42,6 +42,9 @@ class DmaxDataGenerationFlowDocument(BaseModel):
     polymer_pdb: Optional[Any] = Field(
         None, description="Reference or contents of the generated polymer PDB file"
     )
+    data_file: Any = Field(
+        ..., description="Path to the generated LAMMPS data file"
+    )
     lammps_data: Optional[Any] = Field(
         None, description="Reference or contents of the generated LAMMPS data file"
     )
@@ -154,6 +157,9 @@ class DmaxStrainSizeConvergenceFlowDocument(BaseModel):
     r2: list[float] = Field(..., description="R² of sinusoidal fit for each amplitude")
     plot: str = Field(..., description="Path to RMSE and R² vs amplitude plot")
     optimal_osc_amp_pc: float = Field(..., description="Selected optimal oscillation amplitude (percent)")
+    optimal_work_dir: str = Field(..., description="Working directory that produced the optimal run")
+    optimal_restart_file: str = Field(..., description="Path to restart.equil of the optimal run")
+    optimal_num_cycles: Any = Field(..., description="Minimum number of cycles for convergence")
 
 class DmaxNumCyclesConvergenceFlowDocument(BaseModel):
     """Document for number-of-cycles convergence analysis"""

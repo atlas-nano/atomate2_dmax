@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from jobflow import Maker, job, Response
 from dataclasses import dataclass, field
+from typing import Any
 
 from atomate2.dmax.schemas.task import DmaxStrainSizeConvergenceFlowDocument, DmaxDmaParserDocument
 
@@ -12,10 +13,15 @@ class StrainConvergencePlotMaker(Maker):
     name: str = 'strain_convergence_plot'
 
     @job(output_schema=DmaxStrainSizeConvergenceFlowDocument)
-    def make(self, parser_docs: list[DmaxDmaParserDocument], amps: list[float]) -> Response:
+    def make(
+        self,
+        parser_docs: list[DmaxDmaParserDocument],
+        amps: list[float],
+        restart_files: list[Any],
+    ) -> Response:
         # extract metrics
         rmse_vals = [doc.fit_rmse for doc in parser_docs]
-        r2_vals = [doc.fit_r2 for doc in parser_docs]
+        r2_vals   = [doc.fit_r2  for doc in parser_docs]
         # plot RMSE and R2 vs amplitude
         plot_file = os.path.join(os.getcwd(), 'dma_convergence.png')
         fig, ax1 = plt.subplots()
@@ -36,13 +42,31 @@ class StrainConvergencePlotMaker(Maker):
         combined = rmse_rank + r2_rank
         opt_idx = int(np.argmin(combined))
         optimal_amp = float(amps[opt_idx])
-        # return document
+        # restart.equil path that belongs to the optimal amplitude
+        optimal_restart = str(restart_files[opt_idx])
+        print(f"Optimal restart file: {optimal_restart}")
+        # -------------------------------------------------------------- #
+        # Build downstream flow (lazy import avoids circular import)
+        # -------------------------------------------------------------- #
+        # -------------------------------------------------------------- #
+        # Detour: launch NumCyclesConvergenceFlow on the *same directory*
+        # -------------------------------------------------------------- #
+        from atomate2.dmax.flows.core import NumCyclesConvergenceFlow
+        detour_flow = NumCyclesConvergenceFlow(
+            threshold=0.01    # or expose as attribute
+        ).make(optimal_restart)
+        cycle_job   = detour_flow.jobs[-1]
+        
         return Response(
             output=DmaxStrainSizeConvergenceFlowDocument(
-                osc_amp_pc=amps,
-                rmse=rmse_vals,
-                r2=r2_vals,
-                plot=plot_file,
-                optimal_osc_amp_pc=optimal_amp,
-            )
-        )
+                osc_amp_pc=amps,          # list you tested
+                rmse      =rmse_vals,
+                r2        =r2_vals,
+                plot       =plot_file,
+                optimal_osc_amp_pc = optimal_amp,
+                optimal_work_dir   = os.path.dirname(optimal_restart),
+                optimal_restart_file = optimal_restart,
+                optimal_num_cycles  = cycle_job.output.optimal_num_cycles,
+             ),
+             detour=detour_flow,
+         )

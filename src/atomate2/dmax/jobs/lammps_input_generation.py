@@ -6,6 +6,7 @@ import os, shutil
 from jinja2 import Environment, FileSystemLoader
 
 from atomate2.dmax.schemas.task import DmaxLammpsInputDocument
+from jobflow.core.reference import OutputReference 
 
 # Directory containing Jinja2 templates
 TEMPLATE_DIR = Path(__file__).parent.parent / 'templates' / 'lammps'
@@ -95,6 +96,9 @@ class LammpsInputMakerBase(Maker):
             },
         }
         ctx.update(style_defaults.get(self.data_file_type, {}))
+        # for structure equilibration, remove shorthand thermo_style to use the template's default long style
+        if self.simulation_type == 'structure equilibration':
+            ctx.pop('thermo_style', None)
         # ensure full thermo_style listing for DMA simulations
         if self.simulation_type == 'dma simulation':
             ctx['thermo_style'] = (
@@ -142,8 +146,8 @@ class StructureEquilInputMaker(LammpsInputMakerBase):
     temperature: float = 300.0
     pressure: float = 1.0
     heat_steps: int = 10000
-    npt_steps: int = 10000
-    prod_steps: int = 100000
+    npt_steps: int = 100000
+    prod_steps: int = 1000
 
 @dataclass
 class DmaInputMaker(LammpsInputMakerBase):
@@ -165,40 +169,64 @@ class DmaInputMaker(LammpsInputMakerBase):
     runtime: int = 0    # will be computed by num_cycles
     thermo: int = 0     # will be computed by num_cycles
     seed: int = 12345678
-    frequency: float = 50e9  # oscillation frequency in Hz
+    frequency: float = 20e9  # oscillation frequency in Hz
     num_cycles: int = 3     # number of oscillation cycles to run
     osc_amp_pc: float = 20  # oscillation amplitude in percent of box length
     npt_steps: int = 10000
 
     @job(output_schema=DmaxLammpsInputDocument)
-    def make(self, restart_file: str, data_file: str = None) -> DmaxLammpsInputDocument:
-         # determine seed based on error_analysis flag
-         if self.error_analysis:
-             import random
-             self.seed = random.randint(10**7, 10**8 - 1)
-         # determine deformation axes from provided data file box dimensions
-         if data_file:
-             lengths = {}
-             try:
-                 with open(data_file, 'r') as df:
-                     for line in df:
-                         parts = line.strip().split()
-                         if len(parts) == 4 and parts[2].endswith('lo') and parts[3].endswith('hi'):
-                             axis = parts[2][0].lower()
-                             lo, hi = float(parts[0]), float(parts[1])
-                             lengths[axis] = hi - lo
-                 # sort axes by length descending
-                 if len(lengths) == 3:
-                     sorted_axes = sorted(lengths.items(), key=lambda kv: kv[1], reverse=True)
-                     self.dim_0, self.dim_1, self.dim_2 = [ax for ax, _ in sorted_axes]
-             except Exception:
-                 # fallback to defaults 'z','x','y'
-                 pass
-         # compute period, thermo, and total runtime in timesteps
-         dt_s = self.timestep * 1e-15
-         steps_per_period = math.ceil((1.0 / self.frequency) / dt_s)
-         self.period = steps_per_period
-         self.thermo = max(1, steps_per_period // 1000)
-         self.runtime = steps_per_period * self.num_cycles
-         # delegate to base class to copy restart file, render templates, and return document
-         return LammpsInputMakerBase.make.__wrapped__(self, restart_file)
+    def make(
+        self,
+        restart_file: str,
+        num_cycles: int | None = None,
+        osc_amp_pc: float | None = None,
+        data_file: str | None = None,
+        **kwargs,
+    ) -> DmaxLammpsInputDocument:
+        cycles = num_cycles if num_cycles is not None else self.num_cycles
+        if isinstance(cycles, OutputReference):
+            raise ValueError(
+                "num_cycles arrived as OutputReference – pass it as the second "
+                "argument to DmaInputMaker.make(), not as a Maker attribute."
+            )
+        self.num_cycles = cycles   # keep field consistent
+        
+        # ----- NEW: resolve oscillation amplitude -----------------------
+        amp = osc_amp_pc if osc_amp_pc is not None else self.osc_amp_pc
+        if isinstance(amp, OutputReference):
+            raise ValueError(
+                "osc_amp_pc arrived as OutputReference – "
+                "pass it as the 'osc_amp_pc' argument to DmaInputMaker.make()."
+            )
+        self.osc_amp_pc = amp
+
+        # determine seed based on error_analysis flag
+        if self.error_analysis:
+            import random
+            self.seed = random.randint(10**7, 10**8 - 1)
+        # determine deformation axes from provided data file box dimensions
+        if data_file:
+            lengths = {}
+            try:
+                with open(data_file, 'r') as df:
+                    for line in df:
+                        parts = line.strip().split()
+                        if len(parts) == 4 and parts[2].endswith('lo') and parts[3].endswith('hi'):
+                            axis = parts[2][0].lower()
+                            lo, hi = float(parts[0]), float(parts[1])
+                            lengths[axis] = hi - lo
+                # sort axes by length descending
+                if len(lengths) == 3:
+                    sorted_axes = sorted(lengths.items(), key=lambda kv: kv[1], reverse=True)
+                    self.dim_0, self.dim_1, self.dim_2 = [ax for ax, _ in sorted_axes]
+            except Exception:
+                # fallback to defaults 'z','x','y'
+                pass
+        # compute period, thermo, and total runtime in timesteps
+        dt_s = self.timestep * 1e-15
+        steps_per_period = math.ceil((1.0 / self.frequency) / dt_s)
+        self.period = steps_per_period
+        self.thermo = max(1, steps_per_period // 1000)
+        self.runtime = steps_per_period * cycles
+        # call base maker to generate input and script using provided restart file path
+        return LammpsInputMakerBase.make.__wrapped__(self, restart_file)

@@ -57,10 +57,10 @@ class LammpsLocalRunMaker(Maker):
             # run LAMMPS binary with input script and log, choose GPU if requested
             if self.use_gpu:
                 lmp_bin = os.environ.get('LAMMPS_BINARY_GPU', 'lmp_gpu')
-                cmd = [lmp_bin, '-sf', 'gpu', '-pk', 'gpu', str(self.gpu_count), '-in', input_doc.input_file, '-log', 'lammps.log']
+                cmd = [lmp_bin, '-sf', 'gpu', '-pk', 'gpu', str(self.gpu_count), '-in', input_doc.input_file, '-log', 'lammps.log', '-screen', 'none']
             else:
                 lmp_bin = os.environ.get('LAMMPS_BINARY', 'lmp_mpi')  # default to mpi binary
-                cmd = [lmp_bin, '-in', input_doc.input_file, '-log', 'lammps.log']
+                cmd = [lmp_bin, '-in', input_doc.input_file, '-log', 'lammps.log', '-screen', 'none']
             subprocess.check_call(cmd)
         finally:
             os.chdir(cwd)

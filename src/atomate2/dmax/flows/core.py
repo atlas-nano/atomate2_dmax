@@ -50,8 +50,8 @@ class BaseDataGenerationFlow(Maker):
     # flow name
     name: str = "DMA workflow"
     smiles: str = "[*]CC[*]"
-    left_cap: str = "C"
-    right_cap: str = "C"
+    left_cap: str = "C[*]"
+    right_cap: str = "C[*]"
     length: int = 10
     num_molecules: int = 5
     density: float = 0.8
@@ -94,6 +94,7 @@ class BaseDataGenerationFlow(Maker):
         doc = DmaxDataGenerationFlowDocument(
             packmol_pdb=struct_doc.packmol_pdb,
             polymer_pdb=struct_doc.polymer_pdb,
+            data_file=ff_doc.data_file,
             lammps_data=ff_doc.lammps_data,
         )
         # return a Flow chaining the structure and forcefield jobs
@@ -111,10 +112,12 @@ class StructureEquilibrationFlow(Maker):
         generator: Parametrization generator ('psp', 'foyer', 'pysimm', 'antechamber', 'auto').
     """
 
+    include_impropers: bool = False  # whether to include improper dihedrals in forcefield
+
     # inherit or re-specify relevant parameters
     smiles: str = "[*]CC[*]"
-    left_cap: str = "C"
-    right_cap: str = "C"
+    left_cap: str = "C[*]"
+    right_cap: str = "C[*]"
     length: int = 10
     num_molecules: int = 5
     density: float = 0.8
@@ -129,9 +132,8 @@ class StructureEquilibrationFlow(Maker):
     gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self) -> Flow:
-        # Base data-generation
-        wd = str(self.out_dir) if self.out_dir else None
-        struct_job = PSPStructureMaker(
+        # 1) generate structure and forcefield
+        data_flow = BaseDataGenerationFlow(
             smiles=self.smiles,
             left_cap=self.left_cap,
             right_cap=self.right_cap,
@@ -139,24 +141,21 @@ class StructureEquilibrationFlow(Maker):
             num_molecules=self.num_molecules,
             density=self.density,
             box_type=self.box_type,
-            out_dir=wd,
+            out_dir=self.out_dir,
             num_conf=self.num_conf,
             loop=self.loop,
-            return_builder=True,
-        ).make()
-        ff_job = ForceFieldMaker(
             forcefield=self.forcefield,
             generator=self.generator,
-            out_dir=wd,
-        ).make(struct_job.output)
+            include_impropers=self.include_impropers,
+        ).make()
 
-        # Generate LAMMPS input for structure equilibration
+        # 2) generate LAMMPS input for structure equilibration
         from atomate2.dmax.jobs.lammps_input_generation import StructureEquilInputMaker
+        # generate LAMMPS input for structure equilibration using correct data file path
         input_job = StructureEquilInputMaker(
             name='structure_equilibration',
-            data_file_type=ff_job.output.forcefield_type,
-            out_dir=wd
-        ).make(ff_job.output.data_file)
+            out_dir=str(self.out_dir) if self.out_dir else None
+        ).make(data_flow.output.data_file)
 
         # run the LAMMPS simulation: either local bash execution or SLURM
         local = self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
@@ -171,9 +170,9 @@ class StructureEquilibrationFlow(Maker):
         # parse the outputs: include input and run docs
         parse_job = StructureEquilParserMaker().make(input_job.output, run_job.output)
 
-        # assemble final Flow document using direct OutputReferences
-        struct_doc = struct_job.output
-        ff_doc = ff_job.output
+        # assemble final Flow document using data_flow output
+        struct_doc = data_flow.output
+        ff_doc = data_flow.output
         input_doc = input_job.output
         run_doc = run_job.output
         doc = DmaxStructureEquilibrationFlowDocument(
@@ -187,8 +186,7 @@ class StructureEquilibrationFlow(Maker):
         )
         # return flow chaining all jobs with consolidated document
         return Flow([
-            struct_job,
-            ff_job,
+            data_flow,
             input_job,
             run_job,
             parse_job,
@@ -243,7 +241,7 @@ class StrainSizeConvergenceFlow(Maker):
     """
     name: str = 'strain_size_convergence_flow'
     run_locally: bool = False
-    n_amps: int = 5
+    n_amps: int = 2
     min_amp_pc: float = 0.1
     max_amp_pc: float = 50.0
     existing_dirs: dict[float, list[str]] | None = None  # optional mapping from amplitude to directories
@@ -256,6 +254,7 @@ class StrainSizeConvergenceFlow(Maker):
         from atomate2.dmax.jobs.dma_parser import DmaParserMaker
         parser_jobs: list = []
         all_jobs: list = []
+        restart_refs: list = []
         # if existing_dirs provided, parse those instead of launching new jobs
         if self.existing_dirs:
             from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
@@ -271,6 +270,7 @@ class StrainSizeConvergenceFlow(Maker):
                     parser_job = DmaParserMaker().make(input_doc, run_doc)
                     all_jobs.append(parser_job)
                     parser_jobs.append(parser_job)
+                    restart_refs.append(run_doc.restart_file)
         else:
             amps = np.linspace(self.min_amp_pc, self.max_amp_pc, self.n_amps)
             for amp in amps:
@@ -287,10 +287,15 @@ class StrainSizeConvergenceFlow(Maker):
                 parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)
                 all_jobs.append(parser_job)
                 parser_jobs.append(parser_job)
+                restart_refs.append(run_job.output.restart_file)
         # post-process: plot and select optimal using a dedicated job
         amps_list = amps if isinstance(amps, list) else amps.tolist()
         plot_maker = StrainConvergencePlotMaker()
-        conv_job = plot_maker.make([pj.output for pj in parser_jobs], amps_list)
+        conv_job = plot_maker.make(
+            [pj.output for pj in parser_jobs],
+            amps_list,
+            restart_refs,                        
+        )
         all_jobs.append(conv_job)
         return Flow(all_jobs, conv_job.output, name=self.name)
 
@@ -298,29 +303,53 @@ class StrainSizeConvergenceFlow(Maker):
 @dataclass
 class NumCyclesConvergenceFlow(Maker):
     """
-    Flow that re-parses a DMA run and analyzes tanδ convergence over cycle count.
+    Flow that re-parses a DMA run and analyzes tan δ convergence over cycle count.
+
+    Two jobs are launched:
+      1) `full_parse`  · parses the entire DMA log (gives a rich record)
+      2) `cycle_job`   · analyses tanδ vs. #cycles
+
+    The second job receives BOTH the `restart_file` and `full_parse.output`.
+    The latter is ignored inside the job but forces a dependency, so the
+    scheduler now knows `cycle_job` must start **after** `full_parse`.
     """
     name: str = 'num_cycles_convergence_flow'
     threshold: float = 0.01
 
-    def make(self, restart_file: str) -> Flow:
+    def make(self, restart_file: Any) -> Flow:
+        # ------------------------------------------------------------------ #
+        # 1) Build the full parser job (needs the working directory)
+        # ------------------------------------------------------------------ #
+        restart_path = str(restart_file)
+        work_dir = os.path.dirname(restart_path)
+
         from atomate2.dmax.jobs.dma_parser import DmaParserMaker
         from atomate2.dmax.jobs.num_cycles_convergence import NumCyclesConvergenceMaker
         from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
-        # work directory
-        work_dir = os.path.dirname(restart_file)
-        # full parse
+
         input_doc = DmaxLammpsInputDocument(
             input_dir=work_dir,
-            data_file='', input_file='in.lammps', slurm_file=''
+            data_file='',
+            input_file='in.lammps',
+            slurm_file='',
         )
-        run_doc = DmaxLammpsRunDocument(job_id='local', restart_file=restart_file)
+        run_doc = DmaxLammpsRunDocument(job_id='local', restart_file=restart_path)
+
         full_parse = DmaParserMaker().make(input_doc, run_doc)
         full_parse.append_name(' full_parse')
-        # cycle convergence
-        cycle_job = NumCyclesConvergenceMaker(threshold=self.threshold).make(work_dir)
+
+        # ------------------------------------------------------------------ #
+        # 2) Cycle-convergence analysis -- depends on full_parse
+        # ------------------------------------------------------------------ #
+        cycle_job = NumCyclesConvergenceMaker(threshold=self.threshold).make(
+            restart_file,           # real input
+            full_parse.output       # *unused* but adds an edge
+        )
         cycle_job.append_name(' cycle_conv')
-        # assemble
+
+        # ------------------------------------------------------------------ #
+        # 3) Assemble Flow
+        # ------------------------------------------------------------------ #
         return Flow(
             [full_parse, cycle_job],
             output={
@@ -338,9 +367,9 @@ class ErrorAnalysisFlow(Maker):
     """
     name: str = 'error_analysis_flow'
     osc_amp_pc: float = 25.0
-    num_cycles: int = 5
-    freqs_ghz: list[float] = field(default_factory=lambda: [20.0, 30.0, 40.0])
-    n_sims: int = 5
+    num_cycles: int = 2
+    freqs_ghz: list[float] = field(default_factory=lambda: [400.0, 450.0])  # default frequencies in GHz
+    n_sims: int = 2
     run_locally: bool = False
     existing_dirs: dict[float, list[str]] | None = None  # map frequency to list of dirs with existing runs
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
@@ -370,12 +399,13 @@ class ErrorAnalysisFlow(Maker):
             for freq in freqs:
                 freq_group = []
                 for i in range(self.n_sims):
-                    dma_input = DmaInputMaker(
-                        osc_amp_pc=self.osc_amp_pc,
-                        num_cycles=self.num_cycles,
-                        frequency=freq * 1e9,
-                        error_analysis=True,
-                    ).make(restart_file)  # type: ignore
+                    dma_input = (
+                        DmaInputMaker(
+                            frequency=freq * 1e9,
+                            error_analysis=True,
+                        )
+                        .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc)
+                    )
                     all_jobs.append(dma_input)
                     run_job = (
                         LammpsLocalRunMaker(
@@ -402,16 +432,21 @@ class GlassTransitionTemperatureFlow(Maker):
     """Flow to estimate glass transition temperature from DMA across temperatures"""
     name: str = 'glass_transition_flow'
     osc_amp_pc: float = 25.0  # use optimal defaults
-    num_cycles: int = 3
-    frequency_ghz: float = 80.0
+    num_cycles: int = 2
+    frequency_ghz: float = 400.0
     temp_range: tuple[float, float] = (200.0, 400.0)  # plausible Tg range in K
-    n_temps: int = 9  # provides ~25K spacing over 200-400K
+    n_temps: int = 2  # provides ~25K spacing over 200-400K
     run_locally: bool = False
     existing_dirs: dict[float, list[str]] | None = None  # optional mapping from temperature to directories
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
     gpu_count: int = 1  # number of GPUs to use if using GPU
 
-    def make(self, restart_file: str | None = None) -> Flow:
+    def make(
+        self,
+        restart_file: str,
+        *,                          # keyword-only
+        after: Any | None = None,   # ← NEW, completely ignored inside
+    ) -> Flow:
         all_jobs: list = []
         parser_jobs: list = []
         # determine temperature list
@@ -431,12 +466,13 @@ class GlassTransitionTemperatureFlow(Maker):
             temps = list(np.linspace(self.temp_range[0], self.temp_range[1], self.n_temps))
             for T in temps:
                 # spawn DMA runs at specified temperature T
-                dma_input = DmaInputMaker(
-                    osc_amp_pc=self.osc_amp_pc,
-                    num_cycles=self.num_cycles,
-                    frequency=self.frequency_ghz * 1e9,
-                    temperature=T,
-                ).make(restart_file)  # type: ignore
+                dma_input = (
+                    DmaInputMaker(
+                        frequency=self.frequency_ghz * 1e9,
+                        temperature=T,
+                    )
+                    .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc, after=after)
+                )
                 all_jobs.append(dma_input)
                 # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
                 run_job = (
@@ -458,17 +494,22 @@ class MasterCurveFlow(Maker):
     """Flow to construct a master curve over temperatures and frequencies"""
     name: str = 'master_curve_flow'
     osc_amp_pc: float = 25.0
-    num_cycles: int = 5
+    num_cycles: int = 2
     reference_temp: float | None = None
     temp_range: tuple[float, float] = (200.0, 400.0)
-    n_temps: int = 7
-    freqs_ghz: list[float] = field(default_factory=lambda: list(np.logspace(np.log10(10.0), np.log10(100.0), 15)))
+    n_temps: int = 3
+    freqs_ghz: list[float] = field(default_factory=lambda: list(np.logspace(np.log10(10.0), np.log10(100.0), 3)))
     run_locally: bool = False
     existing_dirs: dict[tuple[float, float], list[str]] | None = None
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
     gpu_count: int = 1  # number of GPUs to use if using GPU
 
-    def make(self, restart_file: str | None = None) -> Flow:
+    def make(
+        self,
+        restart_file: str,
+        *,                          # keyword-only
+        after: Any | None = None,   # ← NEW
+    ) -> Flow:
         all_jobs: list = []
         parser_outputs: list = []
         # determine temperatures and reference
@@ -491,7 +532,13 @@ class MasterCurveFlow(Maker):
                         all_jobs.append(parser)
                         parser_outputs.append(parser.output)
                 else:
-                    dma_input = DmaInputMaker(osc_amp_pc=self.osc_amp_pc, num_cycles=self.num_cycles, frequency=fghz * 1e9).make(restart_file)  # type: ignore
+                    dma_input = (
+                        DmaInputMaker(
+                            frequency=fghz * 1e9,
+                            temperature=T,
+                        )
+                        .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc, after=after)
+                    )
                     all_jobs.append(dma_input)
                     run_job = (LammpsLocalRunMaker(use_gpu=self.use_gpu, gpu_count=self.gpu_count) if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY else LammpsSlurmRunMaker()).make(dma_input.output)
                     all_jobs.append(run_job)
@@ -499,7 +546,11 @@ class MasterCurveFlow(Maker):
                     all_jobs.append(parser)
                     parser_outputs.append(parser.output)
         # plot master curve
-        plot_job = MasterCurvePlotMaker().make(parser_outputs, temps, freqs, ref_temp)
+        plot_job = MasterCurvePlotMaker(
+            freqs_GHz=freqs,
+            temps_K=temps,
+            reference_temp_K=ref_temp,
+        ).make(parser_outputs)
         all_jobs.append(plot_job)
         return Flow(all_jobs, plot_job.output, name=self.name)
 
@@ -511,11 +562,11 @@ class FullGlassTemperatureFlow(Maker):
     name: str = 'full_glass_temperature_flow'
     # polymer structure parameters
     smiles: str = "[*]CC[*]"
-    left_cap: str = "C"
-    right_cap: str = "C"
+    left_cap: str = "C[*]"
+    right_cap: str = "C[*]"
     length: int = 10
     num_molecules: int = 5
-    density: float = 0.8
+    density: float = 1.0
     box_type: str = "c"
     out_dir: Path | None = None
     num_conf: int = 1
@@ -523,30 +574,21 @@ class FullGlassTemperatureFlow(Maker):
     forcefield: str = 'auto'
     generator: str = 'auto'
     include_impropers: bool = False
+    # convergence parameters for strain-size
+    n_amps: int = 2
+    min_amp_pc: float = 0.1
+    max_amp_pc: float = 50.0
+    existing_dirs: dict[float, list[str]] | None = None
     # execution parameters
     run_locally: bool = False
-    error_freqs_ghz: list[float] = field(default_factory=lambda: list(np.linspace(0.1, 100.0, 5)))
-    error_n_sims: int = 10
+    error_freqs_ghz: list[float] = field(default_factory=lambda: list(np.linspace(0.1, 100.0, 2)))
+    error_n_sims: int = 2
+    temp_range: tuple[float, float] = (200.0, 400.0)  # temperature range for glass transition
+    n_temps: int = 2  # number of temperatures to sample for glass transition
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
     gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self) -> Flow:
-        # 1) generate structure and forcefield
-        data_flow = BaseDataGenerationFlow(
-            smiles=self.smiles,
-            left_cap=self.left_cap,
-            right_cap=self.right_cap,
-            length=self.length,
-            num_molecules=self.num_molecules,
-            density=self.density,
-            box_type=self.box_type,
-            out_dir=self.out_dir,
-            num_conf=self.num_conf,
-            loop=self.loop,
-            forcefield=self.forcefield,
-            generator=self.generator,
-            include_impropers=self.include_impropers,
-        ).make()
         # 2) structure equilibration
         struct_flow = StructureEquilibrationFlow(
             smiles=self.smiles,
@@ -562,41 +604,47 @@ class FullGlassTemperatureFlow(Maker):
             forcefield=self.forcefield,
             generator=self.generator,
             run_locally=self.run_locally,
+            include_impropers=self.include_impropers,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
         ).make()
+        # 3) get restart file reference for downstream jobs
         restart = struct_flow.output.restart_file
-        # 3) strain convergence
+        # 4) strain convergence
         strain_flow = StrainSizeConvergenceFlow(
             run_locally=self.run_locally,
+            n_amps=self.n_amps,
+            min_amp_pc=self.min_amp_pc,
+            max_amp_pc=self.max_amp_pc,
+            existing_dirs=self.existing_dirs,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
         ).make(restart)
         optimal_amp = strain_flow.output.optimal_osc_amp_pc
-        # 4) cycles convergence
-        num_flow = NumCyclesConvergenceFlow(threshold=0.01).make(restart)
-        optimal_cycles = num_flow.output.cycle_convergence.optimal_num_cycles
-        # 5) error analysis
+        # 5) cycles convergence
+        #num_flow = NumCyclesConvergenceFlow(threshold=0.01).make(restart)
+        #optimal_cycles = num_flow.output['cycle_convergence'].optimal_num_cycles
+        # 6) error analysis
         error_flow = ErrorAnalysisFlow(
             osc_amp_pc=optimal_amp,
-            num_cycles=optimal_cycles,
             freqs_ghz=self.error_freqs_ghz,
             n_sims=self.error_n_sims,
             run_locally=self.run_locally,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
         ).make(restart)
-        # 6) glass transition
+        # 7) glass transition
         glass_flow = GlassTransitionTemperatureFlow(
             osc_amp_pc=optimal_amp,
-            num_cycles=optimal_cycles,
             run_locally=self.run_locally,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
+            temp_range=self.temp_range,
+            n_temps=self.n_temps,
         ).make(restart)
         # assemble
         return Flow(
-            [data_flow, struct_flow, strain_flow, num_flow, error_flow, glass_flow],
+            [struct_flow, strain_flow, error_flow, glass_flow],
             glass_flow.output,
             name=self.name,
         )
@@ -612,28 +660,12 @@ class FullDmaxFlow(FullGlassTemperatureFlow):
     # master curve parameters
     reference_temp: float | None = None
     temp_range: tuple[float, float] = (200.0, 400.0)
-    n_temps: int = 7
-    freqs_ghz: list[float] = field(default_factory=lambda: list(np.logspace(np.log10(10.0), np.log10(100.0), 15)))
+    n_temps: int = 2
+    freqs_ghz: list[float] = field(default_factory=lambda: list(np.logspace(np.log10(10.0), np.log10(100.0), 2)))
     existing_dirs: dict[tuple[float, float], list[str]] | None = None  # optional pre-run directories
 
     def make(self) -> Flow:
-        # 1) generate structure and forcefield
-        data_flow = BaseDataGenerationFlow(
-            smiles=self.smiles,
-            left_cap=self.left_cap,
-            right_cap=self.right_cap,
-            length=self.length,
-            num_molecules=self.num_molecules,
-            density=self.density,
-            box_type=self.box_type,
-            out_dir=self.out_dir,
-            num_conf=self.num_conf,
-            loop=self.loop,
-            forcefield=self.forcefield,
-            generator=self.generator,
-            include_impropers=self.include_impropers,
-        ).make()
-        # 2) structure equilibration
+        # 1) structure equilibration (includes data generation)
         struct_flow = StructureEquilibrationFlow(
             smiles=self.smiles,
             left_cap=self.left_cap,
@@ -647,21 +679,26 @@ class FullDmaxFlow(FullGlassTemperatureFlow):
             loop=self.loop,
             forcefield=self.forcefield,
             generator=self.generator,
+            include_impropers=self.include_impropers,
             run_locally=self.run_locally,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
         ).make()
+        # 2) get restart file reference for downstream jobs
         restart = struct_flow.output.restart_file
         # 3) strain convergence
         strain_flow = StrainSizeConvergenceFlow(
             run_locally=self.run_locally,
+            n_amps=self.n_amps,
+            min_amp_pc=self.min_amp_pc,
+            max_amp_pc=self.max_amp_pc,
+            existing_dirs=self.existing_dirs,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
         ).make(restart)
         optimal_amp = strain_flow.output.optimal_osc_amp_pc
         # 4) cycles convergence
-        num_flow = NumCyclesConvergenceFlow(threshold=0.01).make(restart)
-        optimal_cycles = num_flow.output.cycle_convergence.optimal_num_cycles
+        optimal_cycles = strain_flow.output.optimal_num_cycles
         # 5) error analysis
         error_flow = ErrorAnalysisFlow(
             osc_amp_pc=optimal_amp,
@@ -679,7 +716,7 @@ class FullDmaxFlow(FullGlassTemperatureFlow):
             run_locally=self.run_locally,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
-        ).make(restart)
+        ).make(restart, after=error_flow.output)
         # 7) master curve construction
         # determine reference temperature for master curve
         ref_temp = self.reference_temp or glass_flow.output.glass_transition_temp
@@ -694,10 +731,10 @@ class FullDmaxFlow(FullGlassTemperatureFlow):
             existing_dirs=self.existing_dirs,
             use_gpu=self.use_gpu,
             gpu_count=self.gpu_count,
-        ).make(restart)
+        ).make(restart, after=glass_flow.output)
         # assemble full workflow
         return Flow(
-            [data_flow, struct_flow, strain_flow, num_flow, error_flow, glass_flow, master_flow],
+            [struct_flow, strain_flow, error_flow, glass_flow, master_flow],
             master_flow.output,
             name=self.name,
         )

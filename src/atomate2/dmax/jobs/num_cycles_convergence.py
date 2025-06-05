@@ -3,6 +3,7 @@ import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from typing import Any
 from dataclasses import dataclass
 from jobflow import Maker, job, Response
 from scipy.optimize import curve_fit
@@ -75,22 +76,37 @@ def _get_log_path(work_dir):
 @dataclass
 class NumCyclesConvergenceMaker(Maker):
     """
-    Maker to analyze tan δ convergence over increasing cycle count.
+    Analyse tan δ convergence as a function of the number of oscillation cycles.
+
+    Parameters
+    ----------
+    restart_file : str | OutputReference
+        Path to the *restart.equil* produced by the DMA run.
+    parser_output : Any
+        Output from a preceding `DmaParserMaker`.  Not used directly – its
+        presence simply forces a dependency edge so that this job starts
+        **after** the full parser finishes.
     """
     name: str = 'num_cycles_convergence'
     threshold: float = 0.01
 
     @job(output_schema=DmaxNumCyclesConvergenceFlowDocument)
-    def make(self, work_dir: str) -> Response:
-        # locate I/O files
+    def make(self, restart_file: str, parser_output: Any | None = None) -> Response:  # noqa: D401
+        # ------------------------------------------------------------------ #
+        # Setup paths
+        # ------------------------------------------------------------------ #
+        work_dir = os.path.dirname(str(restart_file))
         input_script = os.path.join(work_dir, 'in.lammps')
         log_path = _get_log_path(work_dir)
-        # parse input variables
+
+        # ------------------------------------------------------------------ #
+        # Extract run parameters
+        # ------------------------------------------------------------------ #
         amp_pc, period, axis, dt_fs = _parse_input_vars(input_script)
-        # compute timestep and cycle duration
         cycle_time_fs = period * dt_fs
         omega = 2 * np.pi / period
-        # get box length for max_strain
+
+        # box length for max_strain
         lengths = {}
         with open(log_path, encoding='utf-8', errors='ignore') as logf:
             for line in logf:
@@ -99,63 +115,75 @@ class NumCyclesConvergenceMaker(Maker):
                     if len(nums) >= 6:
                         lo = [float(n) for n in nums[:3]]
                         hi = [float(n) for n in nums[3:6]]
-                        lengths = dict(zip(['x','y','z'], [hi[i] - lo[i] for i in range(3)]))
+                        lengths = dict(zip(['x', 'y', 'z'], [hi[i] - lo[i] for i in range(3)]))
                     break
         L0 = lengths.get(axis, 1.0)
         max_strain = amp_pc * L0
-        # load DMA dataframe
+
+        # ------------------------------------------------------------------ #
+        # Load thermo data
+        # ------------------------------------------------------------------ #
         df = _load_dma_dataframe(log_path, input_script)
         t = df['time'].to_numpy()
-        # stress label
+
         stress_label = f'p{axis}{axis}'
         if stress_label not in df.columns:
-            cand = [col for col in df.columns if col.startswith('p') and col not in ('pe','press')]
-            if cand:
-                stress_label = cand[0]
-            else:
+            cand = [c for c in df.columns if c.startswith('p') and c not in ('pe', 'press')]
+            if not cand:
                 raise KeyError(f"No stress column found for axis {axis}")
-        p = df[stress_label].to_numpy()
-        p = p - p.mean()
-        # compute total number of cycles
+            stress_label = cand[0]
+        p = df[stress_label].to_numpy() - df[stress_label].mean()
+
+        # ------------------------------------------------------------------ #
+        # tanδ vs cycles
+        # ------------------------------------------------------------------ #
         total_cycles = int(np.floor(t.max() / cycle_time_fs))
         num_cycles = list(range(1, total_cycles + 1))
-        tan_deltas = []
+        tan_deltas: list[float | None] = []
+
         for m in num_cycles:
-            # select data for first m cycles
             mask = t <= m * cycle_time_fs
-            t_m = t[mask]
-            p_m = p[mask]
-            # fit sine to pressure
-            guess_A = np.max(p_m) - np.min(p_m)
-            guess_phi = 0.0
-            popt, _ = curve_fit(lambda tt, A, phi: sin_func(tt, A, phi, omega), t_m, p_m, p0=[guess_A, guess_phi])
+            t_m, p_m = t[mask], p[mask]
+
+            guess_A = (p_m.max() - p_m.min())
+            popt, _ = curve_fit(lambda tt, A, phi: sin_func(tt, A, phi, omega),
+                                t_m, p_m, p0=[guess_A, 0.0])
             A_fit, phi_fit = popt
-            # compute moduli
+
             phase_rad = phi_fit % (2 * np.pi)
             A_MPa = abs(A_fit * 0.101325)
             E_storage = A_MPa / max_strain * np.cos(phase_rad)
             E_loss = A_MPa / max_strain * np.sin(phase_rad)
-            tan_deltas.append(float(E_loss / E_storage) if E_storage != 0 else None)
-        # select optimal cycle count based on threshold
+            tan_deltas.append(float(E_loss / E_storage) if E_storage else None)
+
+        # ------------------------------------------------------------------ #
+        # Convergence criterion
+        # ------------------------------------------------------------------ #
         optimal = num_cycles[-1]
         for i in range(1, len(tan_deltas)):
-            if tan_deltas[i-1] is not None and tan_deltas[i] is not None:
-                rel_diff = abs(tan_deltas[i] - tan_deltas[i-1]) / abs(tan_deltas[i])
-                if rel_diff < self.threshold:
+            if tan_deltas[i] is not None and tan_deltas[i - 1] is not None:
+                rel = abs(tan_deltas[i] - tan_deltas[i - 1]) / abs(tan_deltas[i])
+                if rel < self.threshold:
                     optimal = num_cycles[i]
                     break
-        # plot tan_delta vs cycle count
-        plot_file = os.path.join(os.getcwd(), 'tan_delta_vs_cycles.png')
+
+        # ------------------------------------------------------------------ #
+        # Plot
+        # ------------------------------------------------------------------ #
+        plot_file = os.path.join(work_dir, 'tan_delta_vs_cycles.png')
         plt.figure()
         plt.plot(num_cycles, tan_deltas, 'o-')
+        plt.axvline(optimal, color='r', ls='--', label=f'Optimal = {optimal}')
         plt.xlabel('Number of cycles')
         plt.ylabel('tan δ')
-        plt.axvline(optimal, color='r', linestyle='--', label=f'Optimal = {optimal}')
         plt.legend()
         plt.tight_layout()
         plt.savefig(plot_file)
         plt.close()
-        # return document
+
+        # ------------------------------------------------------------------ #
+        # Package results
+        # ------------------------------------------------------------------ #
         return Response(
             output=DmaxNumCyclesConvergenceFlowDocument(
                 num_cycles=num_cycles,
