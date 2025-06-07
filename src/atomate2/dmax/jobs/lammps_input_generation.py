@@ -73,7 +73,7 @@ class LammpsInputMakerBase(Maker):
                 'bond_style': 'harmonic',
                 'angle_style': 'harmonic',
                 'dihedral_style': 'opls',
-                'improper_style': 'cvff',
+                'improper_style': 'none',
                 'kspace_style': 'pppm 1e-6',
                 'pair_modify': 'mix arithmetic',
                 'neighbor': '2.0 bin',
@@ -146,7 +146,7 @@ class StructureEquilInputMaker(LammpsInputMakerBase):
     temperature: float = 300.0
     pressure: float = 1.0
     heat_steps: int = 10000
-    npt_steps: int = 100000
+    npt_steps: int = 3000000
     prod_steps: int = 1000
 
 @dataclass

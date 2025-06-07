@@ -49,55 +49,79 @@ class MasterCurvePlotMaker(Maker):
     def make(self,
              dma_docs: Sequence[DmaxDmaParserDocument],
              ) -> Response:
-
+        # unpack dimensions
         n_temps = len(self.temps_K)
         n_freqs = len(self.freqs_GHz)
-
         if len(dma_docs) != n_temps * n_freqs:
-            raise ValueError(
-                f"Expected {n_temps*n_freqs} parser docs "
-                f"({n_temps} temps × {n_freqs} freqs) but got {len(dma_docs)}."
-            )
-
-        # ------------------------------------------------------------------
-        # reshape flat list → (temps, freqs) matrix of storage-modulus values
-        # ------------------------------------------------------------------
-        stor_mod_GPa = np.empty((n_temps, n_freqs))
-
+            raise ValueError(f"Expected {n_temps*n_freqs} docs but got {len(dma_docs)}.")
+        # prepare data matrices (GPa or dimensionless for tan_delta)
+        stor_mod = np.zeros((n_temps, n_freqs))
+        loss_mod = np.zeros((n_temps, n_freqs))
+        tan_delta = np.zeros((n_temps, n_freqs))
+        # fill matrices and convert units
         idx = 0
-        for i_t in range(n_temps):
-            for i_f in range(n_freqs):
-                # convert MPa → GPa, enforce strictly positive values
-                mp = max(dma_docs[idx].storage_modulus, 1e-3)           # MPa
-                stor_mod_GPa[i_t, i_f] = mp / 1000.0                    # GPa
+        for i_t, T in enumerate(self.temps_K):
+            for i_f, f in enumerate(self.freqs_GHz):
+                doc = dma_docs[idx]
+                stor_mod[i_t, i_f] = max(doc.storage_modulus, 1e-3)     # MPa
+                loss_mod[i_t, i_f] = max(doc.loss_modulus, 1e-3)       # MPa
+                tan_delta[i_t, i_f] = doc.loss_modulus and doc.loss_modulus/doc.storage_modulus
                 idx += 1
-
-        # ──────────────────────────────────────────────────────────────────
-        # plotting
-        # ──────────────────────────────────────────────────────────────────
-        fig, ax = plt.subplots(figsize=(6, 4))
-
-        for t_idx, T in enumerate(self.temps_K):
-            label = f"{T:.0f} K"
-            if self.reference_temp_K is not None and np.isclose(T, self.reference_temp_K):
-                label += "  (reference)"
-
-            y = stor_mod_GPa[t_idx]
-            # protect against matplotlib’s “no positive values” error
-            y = np.where(y <= 0, 1e-6, y)
-
-            ax.semilogx(self.freqs_GHz, y, marker="o", label=label)
-
-        ax.set_xlabel("Frequency (GHz)")
-        ax.set_ylabel("Storage modulus (GPa)")
-        ax.set_title("DMA master curve")
-        ax.grid(True, which="both", ls=":", lw=0.4)
-        ax.legend(fontsize="small")
-        plt.tight_layout()
-
-        save_path = Path(self.save_path).expanduser().resolve()
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=300)
-        plt.close(fig)
-
-        return Response(output=str(save_path))
+        # convert frequencies to Hz
+        freq_Hz = np.array(self.freqs_GHz) * 1e9
+        # determine reference temperature
+        T_ref = self.reference_temp_K if self.reference_temp_K is not None else self.temps_K[n_temps//2]
+        # WLF parameter sets
+        wlf_params = {"WLF1": (17.44, 51.6), "WLF2": (8.86, 101.6)}
+        # output file base
+        base = Path(self.save_path).stem
+        out_dir = Path(self.save_path).expanduser().resolve().parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # 1. Raw plots: storage, loss, tan_delta vs frequency
+        for mat, ylabel, suffix in [(stor_mod, "Storage modulus (GPa)", "storage_raw"),
+                                     (loss_mod, "Loss modulus (MPa)", "loss_raw"),
+                                     (tan_delta, "Loss tangent", "tan_delta_raw")]:
+            fig, ax = plt.subplots(figsize=(6,4))
+            for i, T in enumerate(self.temps_K):
+                # connect points with lines and markers
+                ax.plot(freq_Hz, mat[i], marker='x', linestyle='-', label=f"{T:.0f} K")
+            # adjust font sizes and ticks
+            ax.tick_params(axis='both', which='major', labelsize=8)
+            ax.set_xscale('log')  # log scale on x-axis only
+            ax.set_xlabel("Frequency (Hz)", fontsize=10)
+            ax.set_ylabel(ylabel, fontsize=10)
+            ax.set_title(f"{ylabel} vs frequency", fontsize=12)
+            ax.grid(True, which="both", ls=":", lw=0.4)
+            ax.legend(fontsize="small")
+            fig.tight_layout(pad=1.0)
+            fig.savefig(out_dir/(f"{base}_{suffix}.png"), dpi=300)
+            plt.close(fig)
+        # 2. WLF mastercurve plots for each param set and material
+        for name, (C1, C2) in wlf_params.items():
+            # compute shift factors for each temperature
+            loga = [(C1*(T - T_ref)/(C2 + (T - T_ref))) for T in self.temps_K]
+            a_facs = 10**np.array(loga)
+            # apply shifts and plot each property
+            for mat, ylabel, suffix in [(stor_mod, "Storage modulus (GPa)", "storage"),
+                                         (loss_mod, "Loss modulus (MPa)", "loss"),
+                                         (tan_delta, "Loss tangent", "tan_delta")]:
+                # shifted frequencies
+                fsh = (freq_Hz[None,:] * a_facs[:,None]).ravel()
+                ysh = mat.ravel()
+                # sort for continuous line
+                fig, ax = plt.subplots(figsize=(6,4))
+                # adjust font sizes and ticks
+                ax.tick_params(axis='both', which='major', labelsize=8)
+                fig.tight_layout(pad=1.0)  # ensure labels and title fit
+                # scatter data points
+                ax.scatter(fsh, ysh, s=10, alpha=0.6, label="shifted data")
+                # log scale on x-axis for mastercurve
+                ax.set_xscale('log')
+                ax.set_xlabel("Reduced frequency (Hz)")
+                ax.set_ylabel(ylabel)
+                ax.set_title(f"{ylabel} master curve ({name})")
+                ax.grid(True, which="both", ls=":", lw=0.4)
+                ax.legend(fontsize="small")
+                fig.savefig(out_dir/(f"{base}_{suffix}_{name}.png"), dpi=300)
+                plt.close(fig)
+        return Response(output=str(self.save_path))

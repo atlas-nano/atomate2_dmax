@@ -9,7 +9,7 @@ pair_style       {{ pair_style | default('lj/cut/coul/long 10.0') }}
 bond_style       {{ bond_style | default('harmonic') }}
 angle_style      {{ angle_style | default('harmonic') }}
 dihedral_style   {{ dihedral_style | default('opls') }}
-improper_style   {{ improper_style | default('cvff') }}
+improper_style   {{ improper_style | default('none') }}
 kspace_style     {{ kspace_style | default('pppm 1e-6') }}
 
 # Read the equilibrated restart from previous flow

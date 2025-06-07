@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any
 import os
 
-from jobflow import Flow, Maker, Response  # include Response for DMA flow
+from jobflow import Flow, Maker # include Response for DMA flow
 
 from atomate2.dmax.jobs.structure_generation import PSPStructureMaker
 from atomate2.dmax.jobs.forcefield_param import ForceFieldMaker
-from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
+from atomate2.dmax.jobs.lammps_run import LammpsRunMaker
 from atomate2.dmax.jobs.structure_equil_parser import StructureEquilParserMaker
 from atomate2.dmax.jobs.strain_convergence import StrainConvergencePlotMaker
 from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker  # import DMA input maker
@@ -31,12 +31,10 @@ from atomate2.dmax.schemas.task import (
     DmaxGlassTransitionFlowDocument,
     DmaxMasterCurveFlowDocument,
 )
-from atomate2.dmax.jobs.num_cycles_convergence import NumCyclesConvergenceMaker
 from atomate2.dmax.jobs.glass_transition import GlassTransitionPlotMaker
 from atomate2.dmax.jobs.master_curve import MasterCurvePlotMaker
 import numpy as np  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
-
 
 @dataclass
 class BaseDataGenerationFlow(Maker):
@@ -127,6 +125,13 @@ class StructureEquilibrationFlow(Maker):
     loop: bool = False
     forcefield: str = 'auto'
     generator: str = 'auto'
+    include_impropers: bool = False
+    heat_steps: int = 10000
+    npt_steps: int = 30000
+    prod_steps: int = 10000
+    temperature: int = 300
+    timestep: float = 1.0
+    pressure: float = 1.0
     run_locally: bool = False
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
     gpu_count: int = 1  # number of GPUs to use if using GPU
@@ -154,18 +159,18 @@ class StructureEquilibrationFlow(Maker):
         # generate LAMMPS input for structure equilibration using correct data file path
         input_job = StructureEquilInputMaker(
             name='structure_equilibration',
-            out_dir=str(self.out_dir) if self.out_dir else None
+            out_dir=str(self.out_dir) if self.out_dir else None,
+            heat_steps=self.heat_steps,
+            npt_steps=self.npt_steps,
+            prod_steps=self.prod_steps,
+            temperature=self.temperature,
+            timestep=self.timestep,
+            pressure=self.pressure,
         ).make(data_flow.output.data_file)
 
         # run the LAMMPS simulation: either local bash execution or SLURM
-        local = self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
-        if local:
-            run_job = LammpsLocalRunMaker(
-                use_gpu=self.use_gpu,
-                gpu_count=self.gpu_count
-            ).make(input_job.output)
-        else:
-            run_job = LammpsSlurmRunMaker().make(input_job.output)
+        run_job = LammpsRunMaker().make(input_job.output)
+        run_job.config.manager_config["_category"] = "hpc"
 
         # parse the outputs: include input and run docs
         parse_job = StructureEquilParserMaker().make(input_job.output, run_job.output)
@@ -208,15 +213,8 @@ class DmaFlow(Maker):
         dma_input = DmaInputMaker().make(restart_file)
         dma_input.append_name(' input')
         # run LAMMPS: select SLURM or local based on run_locally or settings
-        local = self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
-        if local:
-            run_job = LammpsLocalRunMaker(
-                use_gpu=self.use_gpu,
-                gpu_count=self.gpu_count
-            ).make(dma_input.output)
-        else:
-            run_job = LammpsSlurmRunMaker().make(dma_input.output)
-        run_job.append_name(' run')
+        run_job = LammpsRunMaker().make(dma_input.output)
+        run_job.config.manager_config["_category"] = "hpc"
         # parse outputs using the input and run documents
         parser_job = DmaParserMaker().make(dma_input.output, run_job.output)
         parser_job.append_name(' parse')
@@ -250,7 +248,7 @@ class StrainSizeConvergenceFlow(Maker):
 
     def make(self, restart_file: str) -> Flow:
         from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker
-        from atomate2.dmax.jobs.lammps_slurm_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
+        from atomate2.dmax.jobs.lammps_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
         from atomate2.dmax.jobs.dma_parser import DmaParserMaker
         parser_jobs: list = []
         all_jobs: list = []
@@ -276,17 +274,14 @@ class StrainSizeConvergenceFlow(Maker):
             for amp in amps:
                 dma_input_job = DmaInputMaker(osc_amp_pc=float(amp)).make(restart_file)
                 all_jobs.append(dma_input_job)
-                if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY:
-                    run_job = LammpsLocalRunMaker(
-                        use_gpu=self.use_gpu,
-                        gpu_count=self.gpu_count
-                    ).make(dma_input_job.output)
-                else:
-                    run_job = LammpsSlurmRunMaker().make(dma_input_job.output)
+
+                run_job = LammpsRunMaker().make(dma_input_job.output)
+                run_job.config.manager_config["_category"] = "hpc"                    
                 all_jobs.append(run_job)
-                parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)
+
+                parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)                    
                 all_jobs.append(parser_job)
-                parser_jobs.append(parser_job)
+                parser_jobs.append(parser_job)       
                 restart_refs.append(run_job.output.restart_file)
         # post-process: plot and select optimal using a dedicated job
         amps_list = amps if isinstance(amps, list) else amps.tolist()
@@ -407,13 +402,8 @@ class ErrorAnalysisFlow(Maker):
                         .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc)
                     )
                     all_jobs.append(dma_input)
-                    run_job = (
-                        LammpsLocalRunMaker(
-                            use_gpu=self.use_gpu,
-                            gpu_count=self.gpu_count
-                        ) if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
-                        else LammpsSlurmRunMaker()
-                    ).make(dma_input.output)
+                    run_job = LammpsRunMaker().make(dma_input.output)
+                    run_job.config.manager_config["_category"] = "hpc"
                     all_jobs.append(run_job)
                     parser = DmaParserMaker().make(dma_input.output, run_job.output)
                     all_jobs.append(parser)
@@ -475,10 +465,8 @@ class GlassTransitionTemperatureFlow(Maker):
                 )
                 all_jobs.append(dma_input)
                 # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
-                run_job = (
-                    LammpsLocalRunMaker(use_gpu=self.use_gpu, gpu_count=self.gpu_count) if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY
-                    else LammpsSlurmRunMaker()
-                ).make(dma_input.output)
+                run_job = LammpsRunMaker().make(dma_input.output)
+                run_job.config.manager_config["_category"] = "hpc"
                 all_jobs.append(run_job)
                 parser = DmaParserMaker().make(dma_input.output, run_job.output)
                 all_jobs.append(parser)
@@ -497,7 +485,7 @@ class MasterCurveFlow(Maker):
     num_cycles: int = 2
     reference_temp: float | None = None
     temp_range: tuple[float, float] = (200.0, 400.0)
-    n_temps: int = 3
+    n_temps: int = 5
     freqs_ghz: list[float] = field(default_factory=lambda: list(np.logspace(np.log10(10.0), np.log10(100.0), 3)))
     run_locally: bool = False
     existing_dirs: dict[tuple[float, float], list[str]] | None = None
@@ -540,7 +528,8 @@ class MasterCurveFlow(Maker):
                         .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc, after=after)
                     )
                     all_jobs.append(dma_input)
-                    run_job = (LammpsLocalRunMaker(use_gpu=self.use_gpu, gpu_count=self.gpu_count) if self.run_locally or SETTINGS.LAMMPS_RUN_LOCALLY else LammpsSlurmRunMaker()).make(dma_input.output)
+                    run_job = LammpsRunMaker().make(dma_input.output)
+                    run_job.config.manager_config["_category"] = "hpc"
                     all_jobs.append(run_job)
                     parser = DmaParserMaker().make(dma_input.output, run_job.output)
                     all_jobs.append(parser)
