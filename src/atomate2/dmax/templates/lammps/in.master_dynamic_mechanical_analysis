@@ -29,7 +29,7 @@ variable         pressure    equal {{ pressure }}
 variable         x           equal lx
 variable         y           equal ly
 variable         z           equal lz
-variable         oap         equal 0.1*{{ osc_amp_pc }}
+variable         oap         equal 0.01*{{ osc_amp_pc }}*${{ "{" + dim_0 + "}" }}
 variable         seed        equal {{ seed }}
 variable         period      equal {{ period }}
 

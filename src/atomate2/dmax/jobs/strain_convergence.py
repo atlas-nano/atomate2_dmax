@@ -36,6 +36,16 @@ class StrainConvergencePlotMaker(Maker):
         fig.tight_layout()
         fig.savefig(plot_file)
         plt.close(fig)
+        # compute Poisson's ratio data
+        poisson_vals = [doc.poisson_ratio for doc in parser_docs]
+        poisson_plot_file = os.path.join(os.getcwd(), 'poisson_ratio_vs_amp.png')
+        fig2, axp = plt.subplots()
+        axp.plot(amps, poisson_vals, 'g-^', label="Poisson's ratio")
+        axp.set_xlabel('Oscillation amplitude (%)')
+        axp.set_ylabel("Poisson's ratio")
+        fig2.tight_layout()
+        fig2.savefig(poisson_plot_file)
+        plt.close(fig2)
         # rank and select optimal amplitude
         rmse_rank = np.argsort(rmse_vals)
         r2_rank = np.argsort([-v for v in r2_vals])
@@ -63,6 +73,8 @@ class StrainConvergencePlotMaker(Maker):
                 rmse      =rmse_vals,
                 r2        =r2_vals,
                 plot       =plot_file,
+                poisson    =poisson_vals,
+                poisson_plot=poisson_plot_file,
                 optimal_osc_amp_pc = optimal_amp,
                 optimal_work_dir   = os.path.dirname(optimal_restart),
                 optimal_restart_file = optimal_restart,

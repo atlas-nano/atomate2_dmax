@@ -156,6 +156,9 @@ class DmaxStrainSizeConvergenceFlowDocument(BaseModel):
     rmse: list[float] = Field(..., description="RMSE of sinusoidal fit for each amplitude")
     r2: list[float] = Field(..., description="R² of sinusoidal fit for each amplitude")
     plot: str = Field(..., description="Path to RMSE and R² vs amplitude plot")
+    # add Poisson ratio data and plot
+    poisson: list[float] = Field(..., description="Poisson's ratio for each amplitude tested")
+    poisson_plot: str = Field(..., description="Path to Poisson's ratio vs amplitude plot")
     optimal_osc_amp_pc: float = Field(..., description="Selected optimal oscillation amplitude (percent)")
     optimal_work_dir: str = Field(..., description="Working directory that produced the optimal run")
     optimal_restart_file: str = Field(..., description="Path to restart.equil of the optimal run")

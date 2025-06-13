@@ -78,6 +78,7 @@ class BaseDataGenerationFlow(Maker):
             loop=self.loop,
             return_builder=True,
         ).make()
+        struct_job.config.manager_config["_category"] = "local" 
         # forcefield
         ff_job = ForceFieldMaker(
             forcefield=self.forcefield,
@@ -85,7 +86,7 @@ class BaseDataGenerationFlow(Maker):
             include_impropers=self.include_impropers,
             out_dir=wd,
         ).make(struct_job.output)
-
+        ff_job.config.manager_config["_category"] = "local" 
         # assemble final document using task documents from each job
         struct_doc = struct_job.output  # DmaxStructureTaskDocument
         ff_doc = ff_job.output  # DmaxForceFieldTaskDocument
@@ -167,6 +168,7 @@ class StructureEquilibrationFlow(Maker):
             timestep=self.timestep,
             pressure=self.pressure,
         ).make(data_flow.output.data_file)
+        input_job.config.manager_config["_category"] = "local"  
 
         # run the LAMMPS simulation: either local bash execution or SLURM
         run_job = LammpsRunMaker().make(input_job.output)
@@ -174,7 +176,7 @@ class StructureEquilibrationFlow(Maker):
 
         # parse the outputs: include input and run docs
         parse_job = StructureEquilParserMaker().make(input_job.output, run_job.output)
-
+        parse_job.config.manager_config["_category"] = "local"  
         # assemble final Flow document using data_flow output
         struct_doc = data_flow.output
         ff_doc = data_flow.output
@@ -212,12 +214,14 @@ class DmaFlow(Maker):
         # generate input
         dma_input = DmaInputMaker().make(restart_file)
         dma_input.append_name(' input')
+        dma_input.config.manager_config["_category"] = "local" 
         # run LAMMPS: select SLURM or local based on run_locally or settings
         run_job = LammpsRunMaker().make(dma_input.output)
         run_job.config.manager_config["_category"] = "hpc"
         # parse outputs using the input and run documents
         parser_job = DmaParserMaker().make(dma_input.output, run_job.output)
         parser_job.append_name(' parse')
+        parser_job.config.manager_config["_category"] = "local"  
         # assemble and return the Flow directly
         return Flow(
             [dma_input, run_job, parser_job],
@@ -241,14 +245,13 @@ class StrainSizeConvergenceFlow(Maker):
     run_locally: bool = False
     n_amps: int = 2
     min_amp_pc: float = 0.1
-    max_amp_pc: float = 50.0
+    max_amp_pc: float = 100.0
     existing_dirs: dict[float, list[str]] | None = None  # optional mapping from amplitude to directories
     use_gpu: bool = False  # whether to use GPU for LAMMPS runs
     gpu_count: int = 1  # number of GPUs to use if using GPU
 
     def make(self, restart_file: str) -> Flow:
         from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker
-        from atomate2.dmax.jobs.lammps_run import LammpsSlurmRunMaker, LammpsLocalRunMaker
         from atomate2.dmax.jobs.dma_parser import DmaParserMaker
         parser_jobs: list = []
         all_jobs: list = []
@@ -266,6 +269,7 @@ class StrainSizeConvergenceFlow(Maker):
                         job_id='existing', restart_file=os.path.join(d, 'restart.equil')
                     )
                     parser_job = DmaParserMaker().make(input_doc, run_doc)
+                    parser_job.config.manager_config["_category"] = "local" 
                     all_jobs.append(parser_job)
                     parser_jobs.append(parser_job)
                     restart_refs.append(run_doc.restart_file)
@@ -273,13 +277,15 @@ class StrainSizeConvergenceFlow(Maker):
             amps = np.linspace(self.min_amp_pc, self.max_amp_pc, self.n_amps)
             for amp in amps:
                 dma_input_job = DmaInputMaker(osc_amp_pc=float(amp)).make(restart_file)
+                dma_input_job.config.manager_config["_category"] = "local"
                 all_jobs.append(dma_input_job)
 
                 run_job = LammpsRunMaker().make(dma_input_job.output)
                 run_job.config.manager_config["_category"] = "hpc"                    
                 all_jobs.append(run_job)
 
-                parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)                    
+                parser_job = DmaParserMaker().make(dma_input_job.output, run_job.output)
+                parser_job.config.manager_config["_category"] = "local"                    
                 all_jobs.append(parser_job)
                 parser_jobs.append(parser_job)       
                 restart_refs.append(run_job.output.restart_file)
@@ -291,6 +297,7 @@ class StrainSizeConvergenceFlow(Maker):
             amps_list,
             restart_refs,                        
         )
+        conv_job.config.manager_config["_category"] = "local" 
         all_jobs.append(conv_job)
         return Flow(all_jobs, conv_job.output, name=self.name)
 
@@ -331,6 +338,7 @@ class NumCyclesConvergenceFlow(Maker):
         run_doc = DmaxLammpsRunDocument(job_id='local', restart_file=restart_path)
 
         full_parse = DmaParserMaker().make(input_doc, run_doc)
+        full_parse.config.manager_config["_category"] = "local" 
         full_parse.append_name(' full_parse')
 
         # ------------------------------------------------------------------ #
@@ -340,6 +348,7 @@ class NumCyclesConvergenceFlow(Maker):
             restart_file,           # real input
             full_parse.output       # *unused* but adds an edge
         )
+        cycle_job.config.manager_config["_category"] = "local" 
         cycle_job.append_name(' cycle_conv')
 
         # ------------------------------------------------------------------ #
@@ -386,6 +395,7 @@ class ErrorAnalysisFlow(Maker):
                     )
                     run_doc = DmaxLammpsRunDocument(job_id='existing', restart_file=os.path.join(d, 'restart.equil'))
                     parser = DmaParserMaker().make(input_doc, run_doc)
+                    parser.config.manager_config["_category"] = "local" 
                     all_jobs.append(parser)
                     group.append(parser)
                 parser_groups.append(group)
@@ -401,11 +411,13 @@ class ErrorAnalysisFlow(Maker):
                         )
                         .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc)
                     )
+                    dma_input.config.manager_config["_category"] = "local"
                     all_jobs.append(dma_input)
                     run_job = LammpsRunMaker().make(dma_input.output)
                     run_job.config.manager_config["_category"] = "hpc"
                     all_jobs.append(run_job)
                     parser = DmaParserMaker().make(dma_input.output, run_job.output)
+                    parser.config.manager_config["_category"] = "local" 
                     all_jobs.append(parser)
                     freq_group.append(parser)
                 parser_groups.append(freq_group)
@@ -450,6 +462,7 @@ class GlassTransitionTemperatureFlow(Maker):
                     )
                     run_doc = DmaxLammpsRunDocument(job_id='existing', restart_file=os.path.join(d, 'restart.equil'))
                     parser = DmaParserMaker().make(input_doc, run_doc)
+                    parser.config.manager_config["_category"] = "local" 
                     all_jobs.append(parser)
                     parser_jobs.append(parser)
         else:
@@ -463,16 +476,19 @@ class GlassTransitionTemperatureFlow(Maker):
                     )
                     .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc, after=after)
                 )
+                dma_input.config.manager_config["_category"] = "local"
                 all_jobs.append(dma_input)
                 # modify temperature in the input script: will be picked up by parser if included in DmaInputMaker
                 run_job = LammpsRunMaker().make(dma_input.output)
                 run_job.config.manager_config["_category"] = "hpc"
                 all_jobs.append(run_job)
                 parser = DmaParserMaker().make(dma_input.output, run_job.output)
+                parser.config.manager_config["_category"] = "local" 
                 all_jobs.append(parser)
                 parser_jobs.append(parser)
         # plot Tg
         plot_job = GlassTransitionPlotMaker().make([p.output for p in parser_jobs], temps)
+        plot_job.config.manager_config["_category"] = "local" 
         all_jobs.append(plot_job)
         return Flow(all_jobs, plot_job.output, name=self.name)
 
@@ -517,6 +533,7 @@ class MasterCurveFlow(Maker):
                         input_doc = DmaxLammpsInputDocument(input_dir=d, data_file='', input_file='in.lammps', slurm_file='')
                         run_doc = DmaxLammpsRunDocument(job_id='existing', restart_file=os.path.join(d, 'restart.equil'))
                         parser = DmaParserMaker().make(input_doc, run_doc)
+                        parser.config.manager_config["_category"] = "local" 
                         all_jobs.append(parser)
                         parser_outputs.append(parser.output)
                 else:
@@ -528,10 +545,12 @@ class MasterCurveFlow(Maker):
                         .make(restart_file, self.num_cycles, osc_amp_pc=self.osc_amp_pc, after=after)
                     )
                     all_jobs.append(dma_input)
+                    dma_input.config.manager_config["_category"] = "local"
                     run_job = LammpsRunMaker().make(dma_input.output)
                     run_job.config.manager_config["_category"] = "hpc"
                     all_jobs.append(run_job)
                     parser = DmaParserMaker().make(dma_input.output, run_job.output)
+                    parser.config.manager_config["_category"] = "local" 
                     all_jobs.append(parser)
                     parser_outputs.append(parser.output)
         # plot master curve
@@ -540,6 +559,7 @@ class MasterCurveFlow(Maker):
             temps_K=temps,
             reference_temp_K=ref_temp,
         ).make(parser_outputs)
+        plot_job.config.manager_config["_category"] = "local" 
         all_jobs.append(plot_job)
         return Flow(all_jobs, plot_job.output, name=self.name)
 
