@@ -136,6 +136,24 @@ strict-forcefields = [
     "torch==2.2.0",
     "torchdata==0.7.1",                            # TODO: remove when issue fixed
 ]
+dmax = [
+    "ase>=3.23.0",
+    "mdanalysis>=2.8.0",
+    "jinja2>=3.0.0",
+    "py3Dmol>=2.0.0",
+    "scikit-learn>=1.0.0",
+    # Note: These packages should be installed via conda-forge:
+    # - openbabel
+    # - rdkit  
+    # - ambertools
+    # - mbuild
+    # - foyer
+    # - gmso
+    # - forcefield-utilities
+    # - lammps
+    # External dependencies (manual installation required):
+    # - PolymerStructurePredictor (PSP): https://github.com/rsilvabuarque/PSP_mod
+]
 
 [project.scripts]
 atm = "atomate2.cli:cli"

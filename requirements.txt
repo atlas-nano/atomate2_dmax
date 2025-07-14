@@ -1,0 +1,51 @@
+# Requirements for atomate2_dmax package
+
+# Core atomate2 dependencies  
+PyYAML>=6.0
+click>=8.1.0
+custodian>=2024.4.18
+emmet-core>=0.84.3rc3
+jobflow>=0.1.11
+monty>=2024.12.10
+pandas>=1.5.0
+matplotlib>=3.5.0
+numpy>=1.20.0
+pydantic-settings>=2.0.3
+pydantic>=2.0.1
+pymatgen>=2024.11.13
+pymongo<=4.10.1
+
+# Molecular dynamics and force field dependencies
+MDAnalysis>=2.8.0
+ase>=3.23.0
+scipy>=1.8.0
+scikit-learn>=1.0.0
+
+# Additional dependencies for polymer simulations
+jinja2>=3.0.0
+ipykernel>=6.0.0
+py3Dmol>=2.0.0
+mp-api>=0.37.5
+
+# Development and testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pre-commit>=2.12.1
+
+# Documentation
+sphinx>=4.0.0
+myst-parser>=0.18.0
+
+# Note: The following packages need to be installed via conda-forge:
+# - openbabel
+# - rdkit  
+# - ambertools
+# - mbuild
+# - foyer
+# - gmso
+# - forcefield-utilities
+# - lammps
+
+# External dependencies (installed separately):
+# - PolymerStructurePredictor (PSP): https://github.com/rsilvabuarque/PSP_mod
+# - BOSS force field database (optional)

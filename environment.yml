@@ -1,0 +1,67 @@
+# Conda Environment File for atomate2_dmax
+
+name: atomate2_dmax
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python and core scientific stack
+  - python=3.10
+  - numpy>=1.20.0
+  - scipy>=1.8.0
+  - pandas>=1.5.0
+  - matplotlib>=3.5.0
+  
+  # Molecular dynamics and chemistry packages
+  - openbabel
+  - rdkit
+  - ambertools
+  - mdanalysis>=2.8.0
+  - ase>=3.23.0
+  
+  # Force field and molecular building tools
+  - mbuild
+  - foyer
+  - gmso
+  - forcefield-utilities
+  - lammps
+  
+  # Development tools
+  - git
+  - jupyterlab
+  - ipykernel
+  
+  # Additional scientific packages available via conda
+  - scikit-learn>=1.0.0
+  - jinja2>=3.0.0
+  
+  # Pip dependencies (packages not available via conda-forge)
+  - pip
+  - pip:
+    # Core atomate2 dependencies
+    - PyYAML>=6.0
+    - click>=8.1.0
+    - custodian>=2024.4.18
+    - emmet-core>=0.84.3rc3
+    - jobflow>=0.1.11
+    - monty>=2024.12.10
+    - pydantic-settings>=2.0.3
+    - pydantic>=2.0.1
+    - pymatgen>=2024.11.13
+    - pymongo<=4.10.1
+    
+    # Additional tools
+    - py3Dmol>=2.0.0
+    - mp-api>=0.37.5
+    - network
+    
+    # Development and testing
+    - pytest>=7.0.0
+    - pytest-cov>=4.0.0
+    - pre-commit>=2.12.1
+
+# Note: After creating the environment, you'll need to manually install:
+# 1. PolymerStructurePredictor (PSP) from: https://github.com/rsilvabuarque/PSP_mod  
+# 2. atomate2_dmax from: https://github.com/rsilvabuarque/atomate2_dmax.git (feature/dmax2-lammps branch)
+# 3. Optional: BOSS force field database
