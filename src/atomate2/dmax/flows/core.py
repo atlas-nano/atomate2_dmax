@@ -20,7 +20,7 @@ from atomate2.dmax.jobs.strain_convergence import StrainConvergencePlotMaker
 from atomate2.dmax.jobs.lammps_input_generation import DmaInputMaker  # import DMA input maker
 from atomate2.dmax.jobs.dma_parser import DmaParserMaker  # import DMA parser maker
 from atomate2.dmax.jobs.error_analysis import ErrorAnalysisPlotMaker
-from atomate2 import SETTINGS
+from atomate2.dmax.settings import DMAX_SETTINGS
 from atomate2.dmax.schemas.task import (
     DmaxDataGenerationFlowDocument,
     DmaxStructureEquilibrationFlowDocument,

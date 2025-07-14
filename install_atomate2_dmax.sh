@@ -289,25 +289,26 @@ EOF
 # Create atomate2.yaml template
 cat > "$CONFIG_DIR/atomate2.yaml" << 'EOF'
 # Atomate2-DMAx configuration
+# Only include settings that are recognized by Atomate2Settings
 
-# LAMMPS settings
+# LAMMPS settings (if supported by your atomate2 version)
 LAMMPS_CMD: "lmp_serial"  # or "lmp_mpi", "lammps", etc.
-LAMMPS_RUN_COMMAND: "lmp_serial"
 
 # Optional: VASP settings (if using VASP)
 # VASP_CMD: "vasp_std"
 
-# Data storage settings
-STORE_VOLUMETRIC_DATA: true
-STORE_TRAJECTORY: true
+# Note: The following settings may not be recognized by base atomate2
+# and should be handled in your workflow code or custom settings:
+# - LAMMPS_RUN_COMMAND
+# - STORE_VOLUMETRIC_DATA  
+# - STORE_TRAJECTORY
+# - LAMMPS_INCAR_UPDATES
+# - LAMMPS_KSPACING
+# - DEFAULT_FF_METHOD
+# - DEFAULT_FF_NAME
 
-# Computational settings
-LAMMPS_INCAR_UPDATES: {}
-LAMMPS_KSPACING: 0.5
-
-# Force field settings
-DEFAULT_FF_METHOD: "ligpargen"  # or "foyer"
-DEFAULT_FF_NAME: "oplsaa"
+# If you need these settings, consider creating a custom settings class
+# or handling them directly in your workflow makers.
 EOF
 
 success "Configuration files created in $CONFIG_DIR"

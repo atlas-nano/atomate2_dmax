@@ -28,6 +28,10 @@ echo -e "${BLUE}Activating environment...${NC}"
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate atomate2_dmax
 
+# Ensure MDAnalysis is installed (sometimes conda-forge has issues)
+echo -e "${BLUE}Ensuring MDAnalysis is installed...${NC}"
+conda install -c conda-forge mdanalysis -y
+
 # Install PSP
 echo -e "${BLUE}Installing PolymerStructurePredictor (PSP)...${NC}"
 INSTALL_DIR="${HOME}/atomate2_dmax_deps"

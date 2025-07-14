@@ -2,6 +2,43 @@
 
 This guide helps resolve common issues encountered during installation and usage of atomate2-dmax.
 
+## Quick Fixes for Common Issues
+
+### Issue: Missing MDAnalysis Package
+
+**Error**: `No module named 'mdanalysis'`
+
+**Commands to run on your system**:
+```bash
+conda activate atomate2_dmax_new  # or your environment name
+conda install -c conda-forge mdanalysis
+```
+
+### Issue: Atomate2 Settings Validation Errors
+
+**Error**: `Extra inputs are not permitted` for LAMMPS_RUN_COMMAND, STORE_VOLUMETRIC_DATA, etc.
+
+This happens because the base Atomate2Settings class doesn't recognize DMAx-specific settings.
+
+**Solution**: Use the fix script provided:
+```bash
+# Run the automated fix script
+./fix_installation.sh
+
+# OR manually fix the configuration file:
+# Edit ~/atomate2_config/atomate2.yaml to contain only:
+cat > ~/atomate2_config/atomate2.yaml << 'EOF'
+# Minimal Atomate2 configuration
+LAMMPS_CMD: "lmp_serial"
+EOF
+
+# Then source the fixed environment:
+source ~/atomate2_config/atomate2_env_fixed.sh
+
+# Test the fix:
+python ~/atomate2_dmax_deps/test_installation_fixed.py
+```
+
 ## Installation Issues
 
 ### 1. Conda/Mamba Installation Problems
