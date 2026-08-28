@@ -71,7 +71,7 @@ print('🎉 Installation fixed!')
 
 ### Problem 2: Invalid Configuration Settings
 - **Cause**: The atomate2.yaml contained DMAx-specific settings that aren't recognized by the base Atomate2Settings class
-- **Fix**: 
+- **Fix**:
   - Created a minimal atomate2.yaml with only base settings
   - Created a DmaxSettings class in `atomate2/dmax/settings.py` to handle DMAx-specific settings
   - Updated the flows to use DMAX_SETTINGS instead of base SETTINGS
@@ -98,13 +98,13 @@ Once the fixes are applied, you can:
    ```python
    from atomate2.dmax.flows.core import StructureEquilibrationFlow
    from atomate2.dmax.settings import DMAX_SETTINGS
-   
+
    # Create a simple polymer structure workflow
    workflow = StructureEquilibrationFlow(
        smiles="[*]CC[*]",  # Polyethylene
        length=10,
        num_molecules=20,
-       density=0.85
+       density=0.85,
    ).make()
    ```
 

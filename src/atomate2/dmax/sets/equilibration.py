@@ -1,6 +1,7 @@
 """
 LAMMPS InputSet for polymer structure equilibration.
 """
+
 from pymatgen.io.lammps.generators import BaseLammpsSetGenerator
 
 
@@ -20,6 +21,7 @@ class StructureEquilibrationSet(BaseLammpsSetGenerator):
     timestep : float
         Time step in ps.
     """
+
     def __init__(
         self,
         system_name: str = "system",
@@ -52,29 +54,31 @@ class StructureEquilibrationSet(BaseLammpsSetGenerator):
         super().__init__(**kwargs)
         self.template = "in.master_structure_equilibration"
         # populate template variables
-        self.settings.update({
-            "system_name": system_name,
-            "temperature": temperature,
-            "pressure": pressure,
-            "heat_steps": heat_steps,
-            "npt_steps": npt_steps,
-            "prod_steps": prod_steps,
-            # LAMMPS settings
-            "units": units,
-            "atom_style": atom_style,
-            "boundary": boundary,
-            "dielectric": dielectric,
-            "special_bonds": special_bonds,
-            "pair_style": pair_style,
-            "bond_style": bond_style,
-            "angle_style": angle_style,
-            "dihedral_style": dihedral_style,
-            "improper_style": improper_style,
-            "kspace_style": kspace_style,
-            "data_file": data_file,
-            "pair_modify": pair_modify,
-            "neighbor": neighbor,
-            "neigh_modify": neigh_modify,
-            "thermo_style": thermo_style,
-            "timestep": timestep,
-        })
+        self.settings.update(
+            {
+                "system_name": system_name,
+                "temperature": temperature,
+                "pressure": pressure,
+                "heat_steps": heat_steps,
+                "npt_steps": npt_steps,
+                "prod_steps": prod_steps,
+                # LAMMPS settings
+                "units": units,
+                "atom_style": atom_style,
+                "boundary": boundary,
+                "dielectric": dielectric,
+                "special_bonds": special_bonds,
+                "pair_style": pair_style,
+                "bond_style": bond_style,
+                "angle_style": angle_style,
+                "dihedral_style": dihedral_style,
+                "improper_style": improper_style,
+                "kspace_style": kspace_style,
+                "data_file": data_file,
+                "pair_modify": pair_modify,
+                "neighbor": neighbor,
+                "neigh_modify": neigh_modify,
+                "thermo_style": thermo_style,
+                "timestep": timestep,
+            }
+        )

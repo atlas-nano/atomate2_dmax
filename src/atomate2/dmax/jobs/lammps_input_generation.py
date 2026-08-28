@@ -1,15 +1,18 @@
 import math
-from dataclasses import dataclass, asdict, field
+import os
+import shutil
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from jobflow import Maker, job
-import os, shutil
+
 from jinja2 import Environment, FileSystemLoader
+from jobflow import Maker, job
+from jobflow.core.reference import OutputReference
 
 from atomate2.dmax.schemas.task import DmaxLammpsInputDocument
-from jobflow.core.reference import OutputReference 
 
 # Directory containing Jinja2 templates
-TEMPLATE_DIR = Path(__file__).parent.parent / 'templates' / 'lammps'
+TEMPLATE_DIR = Path(__file__).parent.parent / "templates" / "lammps"
+
 
 def render_template(template_name: str, context: dict, out_path: str):
     env = Environment(
@@ -18,30 +21,32 @@ def render_template(template_name: str, context: dict, out_path: str):
     )
     template = env.get_template(template_name)
     rendered = template.render(**context)
-    with open(out_path, 'w') as f:
+    with open(out_path, "w") as f:
         f.write(rendered)
+
 
 @dataclass
 class LammpsInputMakerBase(Maker):
     """
     Base Maker for generating LAMMPS input files from a template.
     """
-    name: str = ''
+
+    name: str = ""
     # instead of template_name, select via simulation_type
-    simulation_type: str = ''
-    data_file_type: str = 'opls'
+    simulation_type: str = ""
+    data_file_type: str = "opls"
     slurm_ntasks: int = 1
-    slurm_time: str = '01:00:00'
+    slurm_time: str = "01:00:00"
     out_dir: Path | None = None
     # whether to use GPU-specific SLURM template (slurm_gpu.sh)
     use_gpu: bool = False
     # actual Jobflow maker name must be defined
     # map simulation_type to template file
     SIM2TEMPLATE = {
-        'structure equilibration': 'in.master_structure_equilibration',
+        "structure equilibration": "in.master_structure_equilibration",
         # both DMA error analysis and DMA simulation use the same template
-        'error analysis': 'in.master_dynamic_mechanical_analysis',
-        'dma simulation': 'in.master_dynamic_mechanical_analysis',
+        "error analysis": "in.master_dynamic_mechanical_analysis",
+        "dma simulation": "in.master_dynamic_mechanical_analysis",
     }
 
     @job(output_schema=DmaxLammpsInputDocument)
@@ -63,60 +68,60 @@ class LammpsInputMakerBase(Maker):
         # build context from maker attributes
         ctx = asdict(self)
         # override system_name in context (replace spaces with underscores)
-        ctx['system_name'] = self.name.replace(' ', '_')
+        ctx["system_name"] = self.name.replace(" ", "_")
         # always inject style defaults for OPLS/GAFF2
         style_defaults = {
-            'opls': {
-                'units': 'real',
-                'atom_style': 'full',
-                'pair_style': 'lj/cut/coul/long 10.0',
-                'bond_style': 'harmonic',
-                'angle_style': 'harmonic',
-                'dihedral_style': 'opls',
-                'improper_style': 'none',
-                'kspace_style': 'pppm 1e-6',
-                'pair_modify': 'mix arithmetic',
-                'neighbor': '2.0 bin',
-                'neigh_modify': 'every 2 delay 10 check yes',
-                'thermo_style': 'custom step temp pe etotal',
+            "opls": {
+                "units": "real",
+                "atom_style": "full",
+                "pair_style": "lj/cut/coul/long 10.0",
+                "bond_style": "harmonic",
+                "angle_style": "harmonic",
+                "dihedral_style": "opls",
+                "improper_style": "none",
+                "kspace_style": "pppm 1e-6",
+                "pair_modify": "mix arithmetic",
+                "neighbor": "2.0 bin",
+                "neigh_modify": "every 2 delay 10 check yes",
+                "thermo_style": "custom step temp pe etotal",
             },
-            'gaff2': {
-                'units': 'real',
-                'atom_style': 'full',
-                'pair_style': 'lj/cut/coul/long 10.0',
-                'bond_style': 'harmonic',
-                'angle_style': 'harmonic',
-                'dihedral_style': 'fourier',
-                'improper_style': 'none',
-                'kspace_style': 'pppm 1e-6',
-                'pair_modify': 'mix geometric',
-                'neighbor': '2.0 bin',
-                'neigh_modify': 'every 2 delay 10 check yes',
-                'thermo_style': 'custom step temp pe etotal',
+            "gaff2": {
+                "units": "real",
+                "atom_style": "full",
+                "pair_style": "lj/cut/coul/long 10.0",
+                "bond_style": "harmonic",
+                "angle_style": "harmonic",
+                "dihedral_style": "fourier",
+                "improper_style": "none",
+                "kspace_style": "pppm 1e-6",
+                "pair_modify": "mix geometric",
+                "neighbor": "2.0 bin",
+                "neigh_modify": "every 2 delay 10 check yes",
+                "thermo_style": "custom step temp pe etotal",
             },
         }
         ctx.update(style_defaults.get(self.data_file_type, {}))
         # for structure equilibration, remove shorthand thermo_style to use the template's default long style
-        if self.simulation_type == 'structure equilibration':
-            ctx.pop('thermo_style', None)
+        if self.simulation_type == "structure equilibration":
+            ctx.pop("thermo_style", None)
         # ensure full thermo_style listing for DMA simulations
-        if self.simulation_type == 'dma simulation':
-            ctx['thermo_style'] = (
-                'custom step dt time etotal ecouple ke pe temp press pxx pyy pzz '
-                'pxy pxz pyz lx ly lz vol density'
+        if self.simulation_type == "dma simulation":
+            ctx["thermo_style"] = (
+                "custom step dt time etotal ecouple ke pe temp press pxx pyy pzz "
+                "pxy pxz pyz lx ly lz vol density"
             )
-        ctx['data_file'] = os.path.basename(data_file)
-        input_fname = 'in.lammps'
+        ctx["data_file"] = os.path.basename(data_file)
+        input_fname = "in.lammps"
         render_template(tpl, ctx, os.path.join(wd, input_fname))
         # render SLURM submission script (CPU or GPU)
-        slurm_fname = 'lammps.slurm'
+        slurm_fname = "lammps.slurm"
         slurm_context = {
-            'job_name': self.name,
-            'slurm_ntasks': self.slurm_ntasks,
-            'slurm_time': self.slurm_time,
+            "job_name": self.name,
+            "slurm_ntasks": self.slurm_ntasks,
+            "slurm_time": self.slurm_time,
         }
         # choose template based on flag
-        slurm_template = 'slurm_gpu.sh' if self.use_gpu else 'slurm.sh'
+        slurm_template = "slurm_gpu.sh" if self.use_gpu else "slurm.sh"
         # ensure SLURM template exists
         tpl_path = TEMPLATE_DIR / slurm_template
         if not tpl_path.exists():
@@ -132,16 +137,17 @@ class LammpsInputMakerBase(Maker):
             slurm_file=slurm_fname,
         )
 
+
 @dataclass
 class StructureEquilInputMaker(LammpsInputMakerBase):
-    name: str = 'structure_equilibration'
-    simulation_type: str = 'structure equilibration'
-    data_file_type: str = 'opls'
+    name: str = "structure_equilibration"
+    simulation_type: str = "structure equilibration"
+    data_file_type: str = "opls"
     # default non-style variables
-    boundary: str = 'p p p'
+    boundary: str = "p p p"
     dielectric: float = 1.0
-    special_bonds: str = 'lj/coul 0.0 0.0 0.0'
-    system_name: str = 'system'
+    special_bonds: str = "lj/coul 0.0 0.0 0.0"
+    system_name: str = "system"
     timestep: float = 1.0
     temperature: float = 300.0
     pressure: float = 1.0
@@ -149,11 +155,12 @@ class StructureEquilInputMaker(LammpsInputMakerBase):
     npt_steps: int = 3000000
     prod_steps: int = 1000
 
+
 @dataclass
 class DmaInputMaker(LammpsInputMakerBase):
-    name: str = 'dma'
-    simulation_type: str = 'dma simulation'
-    data_file_type: str = 'opls'
+    name: str = "dma"
+    simulation_type: str = "dma simulation"
+    data_file_type: str = "opls"
     # whether this is an error analysis run (random seed) or standard DMA
     error_analysis: bool = False
     # input restart is always required
@@ -162,15 +169,15 @@ class DmaInputMaker(LammpsInputMakerBase):
     temperature: float = 300.0
     pressure: float = 1.0
     # deformation axes (x, y, z); default to z, x, y
-    dim_0: str = 'z'
-    dim_1: str = 'x'
-    dim_2: str = 'y'
-    period: int = 0     # will be computed by frequency
-    runtime: int = 0    # will be computed by num_cycles
-    thermo: int = 0     # will be computed by num_cycles
+    dim_0: str = "z"
+    dim_1: str = "x"
+    dim_2: str = "y"
+    period: int = 0  # will be computed by frequency
+    runtime: int = 0  # will be computed by num_cycles
+    thermo: int = 0  # will be computed by num_cycles
     seed: int = 12345678
     frequency: float = 20e9  # oscillation frequency in Hz
-    num_cycles: int = 3     # number of oscillation cycles to run
+    num_cycles: int = 3  # number of oscillation cycles to run
     osc_amp_pc: float = 20  # oscillation amplitude in percent of box length
     npt_steps: int = 10000
 
@@ -189,8 +196,8 @@ class DmaInputMaker(LammpsInputMakerBase):
                 "num_cycles arrived as OutputReference – pass it as the second "
                 "argument to DmaInputMaker.make(), not as a Maker attribute."
             )
-        self.num_cycles = cycles   # keep field consistent
-        
+        self.num_cycles = cycles  # keep field consistent
+
         # ----- NEW: resolve oscillation amplitude -----------------------
         amp = osc_amp_pc if osc_amp_pc is not None else self.osc_amp_pc
         if isinstance(amp, OutputReference):
@@ -203,21 +210,28 @@ class DmaInputMaker(LammpsInputMakerBase):
         # determine seed based on error_analysis flag
         if self.error_analysis:
             import random
+
             self.seed = random.randint(10**7, 10**8 - 1)
         # determine deformation axes from provided data file box dimensions
         if data_file:
             lengths = {}
             try:
-                with open(data_file, 'r') as df:
+                with open(data_file) as df:
                     for line in df:
                         parts = line.strip().split()
-                        if len(parts) == 4 and parts[2].endswith('lo') and parts[3].endswith('hi'):
+                        if (
+                            len(parts) == 4
+                            and parts[2].endswith("lo")
+                            and parts[3].endswith("hi")
+                        ):
                             axis = parts[2][0].lower()
                             lo, hi = float(parts[0]), float(parts[1])
                             lengths[axis] = hi - lo
                 # sort axes by length descending
                 if len(lengths) == 3:
-                    sorted_axes = sorted(lengths.items(), key=lambda kv: kv[1], reverse=True)
+                    sorted_axes = sorted(
+                        lengths.items(), key=lambda kv: kv[1], reverse=True
+                    )
                     self.dim_0, self.dim_1, self.dim_2 = [ax for ax, _ in sorted_axes]
             except Exception:
                 # fallback to defaults 'z','x','y'
