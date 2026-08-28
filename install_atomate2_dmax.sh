@@ -202,7 +202,7 @@ if [[ ! -d "PSP" ]]; then
     cd PSP
     log "Installing PSP..."
     python setup.py install
-    
+
     # Verify PSP installation
     if pip show PolymerStructurePredictor &> /dev/null; then
         success "PSP installed successfully"
@@ -267,7 +267,7 @@ JOB_STORE:
     collection_name: "jobs"
     username: "your_username"
     password: "your_password"
-    
+
   additional_stores:
     data:
       type: GridFSStore
@@ -300,7 +300,7 @@ LAMMPS_CMD: "lmp_serial"  # or "lmp_mpi", "lammps", etc.
 # Note: The following settings may not be recognized by base atomate2
 # and should be handled in your workflow code or custom settings:
 # - LAMMPS_RUN_COMMAND
-# - STORE_VOLUMETRIC_DATA  
+# - STORE_VOLUMETRIC_DATA
 # - STORE_TRAJECTORY
 # - LAMMPS_INCAR_UPDATES
 # - LAMMPS_KSPACING
@@ -362,7 +362,7 @@ def test_import(package_name, description=""):
 
 def main():
     print("Testing atomate2_dmax installation...\n")
-    
+
     # Test basic scientific packages
     print("Basic scientific packages:")
     basic_packages = [
@@ -375,7 +375,7 @@ def main():
         ('pymatgen', ''),
     ]
     basic_success = all(test_import(pkg, desc) for pkg, desc in basic_packages)
-    
+
     # Test molecular dynamics packages
     print("\nMolecular dynamics packages:")
     md_packages = [
@@ -388,7 +388,7 @@ def main():
         ('forcefield_utilities', ''),
     ]
     md_success = all(test_import(pkg, desc) for pkg, desc in md_packages)
-    
+
     # Test atomate2 packages
     print("\nAtomatе2-dmax packages:")
     atomate2_packages = [
@@ -399,11 +399,11 @@ def main():
         ('atomate2.dmax.generators', ''),
     ]
     atomate2_success = all(test_import(pkg, desc) for pkg, desc in atomate2_packages)
-    
+
     # Test PSP
     print("\nPolymerStructurePredictor:")
     psp_success = test_import('psp.AmorphousBuilder', '')
-    
+
     print("\n" + "="*50)
     if all([basic_success, md_success, atomate2_success, psp_success]):
         print("🎉 All packages imported successfully!")
@@ -431,7 +431,7 @@ def test_workflow_creation():
         from atomate2.dmax.jobs.structure_generation import PSPStructureMaker
         from atomate2.dmax.jobs.forcefield_param import ForceFieldMaker
         from atomate2.dmax.flows.core import StructureEquilibrationMaker
-        
+
         # Create structure generation job
         structure_maker = PSPStructureMaker(
             smiles="CC",
@@ -439,26 +439,26 @@ def test_workflow_creation():
             num_molecules=10,
             density=0.8
         )
-        
+
         # Create force field parameterization job
         ff_maker = ForceFieldMaker()
-        
+
         # Create equilibration workflow
         equil_maker = StructureEquilibrationMaker()
-        
+
         print("✓ Successfully created workflow makers")
         print("✓ PSPStructureMaker: OK")
-        print("✓ ForceFieldMaker: OK") 
+        print("✓ ForceFieldMaker: OK")
         print("✓ StructureEquilibrationMaker: OK")
         return True
-        
+
     except Exception as e:
         print(f"✗ Failed to create workflow: {e}")
         return False
 
 def main():
     print("Testing atomate2_dmax workflow creation...\n")
-    
+
     if test_workflow_creation():
         print("\n🎉 Workflow creation test passed!")
         print("You can now create and run atomate2_dmax workflows!")
