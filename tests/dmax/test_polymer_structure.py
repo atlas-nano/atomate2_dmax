@@ -1,9 +1,5 @@
-import os
-import pandas as pd
-import pytest
-
 # Import the module under test
-from atomate2.dmax.generators.polymer_structure import build_amorphous_structure, PSPBuilder
+from atomate2.dmax.generators.polymer_structure import build_amorphous_structure
 
 
 def test_build_amorphous_structure(monkeypatch, tmp_path):
@@ -16,21 +12,23 @@ def test_build_amorphous_structure(monkeypatch, tmp_path):
             self.box_type = box_type
             self.OutDir = OutDir
             self.Build_called = False
+
         def Build(self):
             self.Build_called = True
 
     # Monkeypatch PSPBuilder to our dummy
     import atomate2.dmax.generators.polymer_structure as mod
-    monkeypatch.setattr(mod, 'PSPBuilder', DummyBuilder)
 
-    smiles = 'C[*]'  
-    left = 'A[*]'
-    right = '[*]B'
+    monkeypatch.setattr(mod, "PSPBuilder", DummyBuilder)
+
+    smiles = "C[*]"
+    left = "A[*]"
+    right = "[*]B"
     length = 3
     num_molecules = 4
     density = 0.5
-    box_type = 'c'
-    out_dir = str(tmp_path / 'build_out')
+    box_type = "c"
+    out_dir = str(tmp_path / "build_out")
 
     builder = build_amorphous_structure(
         smiles=smiles,
@@ -50,9 +48,9 @@ def test_build_amorphous_structure(monkeypatch, tmp_path):
     assert builder.Build_called is True
     # Check that DataFrame passed to builder contains correct values
     df = builder.df
-    assert df.loc[0, 'smiles'] == smiles
-    assert df.loc[0, 'LeftCap'] == left
-    assert df.loc[0, 'RightCap'] == right
-    assert df.loc[0, 'Len'] == length
-    assert df.loc[0, 'Num'] == num_molecules
+    assert df.loc[0, "smiles"] == smiles
+    assert df.loc[0, "LeftCap"] == left
+    assert df.loc[0, "RightCap"] == right
+    assert df.loc[0, "Len"] == length
+    assert df.loc[0, "Num"] == num_molecules
     assert builder.OutDir == out_dir

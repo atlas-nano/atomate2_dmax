@@ -246,7 +246,7 @@ packages_to_test = [
 # Test molecular dynamics packages
 md_packages = [
     'mbuild',
-    'foyer', 
+    'foyer',
     'gmso',
     'forcefield_utilities',
 ]
@@ -316,16 +316,16 @@ def test_workflow_creation():
             num_molecules=10,
             density=0.8
         )
-        
+
         # Create force field parameterization job
         ff_maker = ForceFieldMaker()
-        
+
         # Create equilibration workflow
         equil_maker = StructureEquilibrationMaker()
-        
+
         print("✓ Successfully created workflow makers")
         return True
-        
+
     except Exception as e:
         print(f"✗ Failed to create workflow: {e}")
         return False
@@ -345,7 +345,7 @@ python test_workflow.py
 
 ### Common Issues and Solutions
 
-1. **Import Error for PSP**: 
+1. **Import Error for PSP**:
    - Ensure PSP is installed correctly: `pip show PolymerStructurePredictor`
    - Check that the PSP directory is in your Python path
 

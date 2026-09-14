@@ -1,22 +1,26 @@
 """
 Job maker for polymer forcefield parametrization via LigParGen or Foyer.
 """
-from dataclasses import dataclass, field
-from pathlib import Path
-from jobflow import Maker, job
+
 import os
 import shutil
-import importlib
+from dataclasses import dataclass
+
+from jobflow import Maker, job
 
 from atomate2.dmax.generators.forcefield import (
     parametrize_auto,
     parametrize_foyer,
-    parametrize_ligpargen,
-    parametrize_gaff2_pysimm,
     parametrize_gaff2_antechamber,
+    parametrize_gaff2_pysimm,
+    parametrize_ligpargen,
 )
 from atomate2.dmax.generators.polymer_structure import PSPBuilderWrapper
-from atomate2.dmax.schemas.task import DmaxForceFieldTaskDocument, DmaxStructureTaskDocument
+from atomate2.dmax.schemas.task import (
+    DmaxForceFieldTaskDocument,
+    DmaxStructureTaskDocument,
+)
+
 
 @dataclass
 class ForceFieldMaker(Maker):
@@ -37,6 +41,7 @@ class ForceFieldMaker(Maker):
     LigParGen OPLS → Foyer OPLS → GAFF2 via pysimm → GAFF2 via antechamber.
     Users can restrict to a specific forcefield or generator.
     """
+
     name: str = "forcefield_parametrization"
     # Choose which forcefield to apply: 'opls', 'gaff2', or 'auto' (fallback)
     forcefield: str = "auto"
@@ -58,7 +63,7 @@ class ForceFieldMaker(Maker):
                 # only call Build if cell bounds not set
                 try:
                     # builder.cell is set after Build; check attribute
-                    getattr(builder, 'cell')
+                    builder.cell
                 except Exception:
                     builder.Build()
                 wrapper._builder = builder
@@ -69,31 +74,43 @@ class ForceFieldMaker(Maker):
                 if not pdb_txt:
                     raise ValueError("Structure document missing PDB content")
                 pdb_path = os.path.join(os.getcwd(), "structure.pdb")
-                with open(pdb_path, 'w') as f:
+                with open(pdb_path, "w") as f:
                     f.write(pdb_txt)
                 amor = pdb_path
         """
         Generate LAMMPS data file from PSP builder `amor` or its wrapper.
         By default uses automatic selection.
         """
+
         # select parametrization function based on user request
         # fallback auto uses parametrize_auto
         def run_auto():
             return parametrize_auto(amor, include_impropers=self.include_impropers)
+
         # mapping generator strings to functions
         gen_funcs = {
-            'psp': lambda a: parametrize_ligpargen(a, include_impropers=self.include_impropers),
-            'foyer': lambda a: parametrize_foyer(a, include_impropers=self.include_impropers),
-            'pysimm': lambda a: parametrize_gaff2_pysimm(a),
-            'antechamber': lambda a: parametrize_gaff2_antechamber(a),
+            "psp": lambda a: parametrize_ligpargen(
+                a, include_impropers=self.include_impropers
+            ),
+            "foyer": lambda a: parametrize_foyer(
+                a, include_impropers=self.include_impropers
+            ),
+            "pysimm": lambda a: parametrize_gaff2_pysimm(a),
+            "antechamber": lambda a: parametrize_gaff2_antechamber(a),
         }
         # determine which forcefield(s) and generator to try
         data_path = None
-        if self.forcefield != 'auto':  # user-specified forcefield
-            if self.forcefield == 'opls':
-                gens = [self.generator] if self.generator != 'auto' else ['psp', 'foyer']
+        if self.forcefield != "auto":  # user-specified forcefield
+            if self.forcefield == "opls":
+                gens = (
+                    [self.generator] if self.generator != "auto" else ["psp", "foyer"]
+                )
             else:  # gaff2
-                gens = [self.generator] if self.generator != 'auto' else ['pysimm', 'antechamber']
+                gens = (
+                    [self.generator]
+                    if self.generator != "auto"
+                    else ["pysimm", "antechamber"]
+                )
             for g in gens:
                 try:
                     func = gen_funcs[g]
@@ -102,15 +119,16 @@ class ForceFieldMaker(Maker):
                 except Exception:
                     continue
             if data_path is None:
-                raise RuntimeError(f"Failed to parametrize {self.forcefield} with {gens}")
+                raise RuntimeError(
+                    f"Failed to parametrize {self.forcefield} with {gens}"
+                )
+        # auto forcefield detection
+        elif self.generator != "auto":
+            # user asked specific generator under auto type, dispatch
+            func = gen_funcs[self.generator]
+            data_path = func(amor)
         else:
-            # auto forcefield detection
-            if self.generator != 'auto':
-                # user asked specific generator under auto type, dispatch
-                func = gen_funcs[self.generator]
-                data_path = func(amor)
-            else:
-                data_path = parametrize_auto(amor, include_impropers=self.include_impropers)
+            data_path = parametrize_auto(amor, include_impropers=self.include_impropers)
         # move data into job cwd
         if not os.path.isabs(data_path) or not os.path.exists(data_path):
             data_path = os.path.join(os.getcwd(), os.path.basename(data_path))
@@ -119,14 +137,14 @@ class ForceFieldMaker(Maker):
             shutil.move(data_path, dest)
             data_path = dest
         # read file contents
-        with open(data_path, 'r') as f:
+        with open(data_path) as f:
             data_txt = f.read()
         # determine forcefield type from filename
         fname = os.path.basename(data_path).lower()
-        if 'opls' in fname:
-            ftype = 'opls'
+        if "opls" in fname:
+            ftype = "opls"
         else:
-            ftype = 'gaff2'
+            ftype = "gaff2"
         # rename to standardized 'data.<basename>' (no extension)
         base = os.path.basename(data_path)
         name_no_ext, _ = os.path.splitext(base)
@@ -134,7 +152,7 @@ class ForceFieldMaker(Maker):
         std_path = os.path.join(os.getcwd(), std_name)
         shutil.move(data_path, std_path)
         # read file contents after rename
-        with open(std_path, 'r') as f:
+        with open(std_path) as f:
             data_txt = f.read()
         # return absolute path so next maker can locate and copy it
         return DmaxForceFieldTaskDocument(

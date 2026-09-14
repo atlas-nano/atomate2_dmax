@@ -126,7 +126,7 @@ Added `dmax` optional dependency group to `pyproject.toml`:
 ```toml
 dmax = [
     "ase>=3.23.0",
-    "mdanalysis>=2.8.0", 
+    "mdanalysis>=2.8.0",
     "jinja2>=3.0.0",
     "py3Dmol>=2.0.0",
     "scikit-learn>=1.0.0",
