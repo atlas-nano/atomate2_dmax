@@ -1,6 +1,6 @@
 # Requirements for atomate2_dmax package
 
-# Core atomate2 dependencies  
+# Core atomate2 dependencies
 PyYAML>=6.0
 click>=8.1.0
 custodian>=2024.4.18
@@ -38,7 +38,7 @@ myst-parser>=0.18.0
 
 # Note: The following packages need to be installed via conda-forge:
 # - openbabel
-# - rdkit  
+# - rdkit
 # - ambertools
 # - mbuild
 # - foyer

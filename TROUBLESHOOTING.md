@@ -305,10 +305,11 @@ ps aux | grep python
 
 ```python
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
 
 # For specific modules
-logging.getLogger('atomate2.dmax').setLevel(logging.DEBUG)
+logging.getLogger("atomate2.dmax").setLevel(logging.DEBUG)
 ```
 
 ### 2. Check Package Versions
@@ -375,6 +376,7 @@ When reporting issues, include:
 ```python
 # Minimal example that reproduces the problem
 import atomate2.dmax
+
 # ... minimal code that fails
 ```
 
