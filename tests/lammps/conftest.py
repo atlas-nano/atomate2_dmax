@@ -1,18 +1,33 @@
+import logging
+import os
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Literal
+
 import pytest
 from pymatgen.core import Molecule, Structure
-import os
-import atomate2.lammps.run
 from pymatgen.io.lammps.generators import BaseLammpsSetGenerator
-from pathlib import Path
-import logging
-from typing import Literal
-from collections.abc import Sequence
 from pymatgen.io.lammps.inputs import LammpsInputFile
 
+import atomate2.lammps.run
+
 logger = logging.getLogger(__name__)
-_VAL_SETTINGS = ('units', 'atom_style', 'dimension', 'boundary', 'pair_style', 'thermo', 'dump', 'timestep', 'run', 'minimize', 'fix')
+_VAL_SETTINGS = (
+    "units",
+    "atom_style",
+    "dimension",
+    "boundary",
+    "pair_style",
+    "thermo",
+    "dump",
+    "timestep",
+    "run",
+    "minimize",
+    "fix",
+)
 _REF_PATHS = {}
 _FAKE_RUN_LAMMPS_KWARGS = {}
+
 
 @pytest.fixture(scope="session")
 def ref_path():
@@ -21,27 +36,31 @@ def ref_path():
     module_dir = Path(__file__).resolve().parents[1]
     test_dir = module_dir / "test_data/lammps/"
     return test_dir.resolve()
-    
+
 
 @pytest.fixture
 def test_si_structure() -> Structure:
     return Structure(
-    lattice=[[0, 0, 2.73], [2.73, 0, 0], [0, 2.73, 0]],
-    species=["Si", "Si"],
-    coords=[[0, 0, 0], [0.25, 0.25, 0.25]],
-)
-    
+        lattice=[[0, 0, 2.73], [2.73, 0, 0], [0, 2.73, 0]],
+        species=["Si", "Si"],
+        coords=[[0, 0, 0], [0.25, 0.25, 0.25]],
+    )
+
+
 @pytest.fixture
 def test_si_force_field(ref_path) -> dict:
-    return {'pair_style': 'tersoff',
-            'pair_coeff': f'* * {os.path.normpath(os.path.join(ref_path, "Si.tersoff"))}'}
+    return {
+        "pair_style": "tersoff",
+        "pair_coeff": f"* * {os.path.normpath(os.path.join(ref_path, 'Si.tersoff'))}",
+    }
+
 
 @pytest.fixture
 def test_h2o_molecule() -> Molecule:
     return Molecule(
-    species=["H", "O", "H"],
-    coords=[[0, 0, 0], [0, 0, 1], [0, 1, 0]],
-)
+        species=["H", "O", "H"],
+        coords=[[0, 0, 0], [0, 0, 1], [0, 1, 0]],
+    )
 
 
 @pytest.fixture
@@ -121,7 +140,7 @@ def fake_run_lammps(
     logger.info("Running fake lammps.")
 
     ref_path = Path(ref_path)
-    
+
     if "in.lammps" in check_inputs:
         check_lammps_in(ref_path, input_settings=input_settings)
 
@@ -136,21 +155,31 @@ def fake_run_lammps(
     logger.info("Generated fake lammps outputs")
 
 
-def check_lammps_in(ref_path: Path, 
-                    input_settings: Sequence[str] = None,
-                    ):
+def check_lammps_in(
+    ref_path: Path,
+    input_settings: Sequence[str] = None,
+):
     ref_input_path = ref_path / "inputs/in.lammps"
     ref_input = LammpsInputFile.from_file(ref_input_path, ignore_comments=True)
     user_input = LammpsInputFile.from_file("in.lammps", ignore_comments=True)
-    
+
     if input_settings:
         for setting in input_settings:
-            if ref_input.contains_command(setting) and user_input.contains_command(setting):
+            if ref_input.contains_command(setting) and user_input.contains_command(
+                setting
+            ):
                 try:
-                    assert ref_input.get_args(setting) == user_input.get_args(setting), f"{user_input.get_args(setting)} != {ref_input.get_args(setting)}"
+                    assert ref_input.get_args(setting) == user_input.get_args(
+                        setting
+                    ), (
+                        f"{user_input.get_args(setting)} != {ref_input.get_args(setting)}"
+                    )
                 except AssertionError as e:
-                    raise AssertionError(f"Input setting '{setting}' does not match reference: {e}")
-    
+                    raise AssertionError(
+                        f"Input setting '{setting}' does not match reference: {e}"
+                    )
+
+
 def clear_lammps_inputs():
     for file in ("in.lammps", "system.data"):
         if Path(file).exists():
