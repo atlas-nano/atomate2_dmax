@@ -2,11 +2,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from jobflow import Maker, job, Response
+from jobflow import Maker, Response, job
 
+from atomate2 import SETTINGS
 from atomate2.dmax.schemas.task import DmaxLammpsInputDocument, DmaxLammpsRunDocument
 from atomate2.lammps.run import run_lammps
-from atomate2 import SETTINGS
+
 
 @dataclass
 class LammpsRunMaker(Maker):
@@ -28,7 +29,7 @@ class LammpsRunMaker(Maker):
         pwd = Path.cwd()
         try:
             os.chdir(Path(input_doc.input_dir))
-            run_lammps(                                   
+            run_lammps(
                 lammps_input_file=input_doc.input_file,
                 lammps_cmd=self.lmp_cmd,
                 lammps_mpi_cmd=self.lmp_mpi_cmd,
@@ -43,4 +44,6 @@ class LammpsRunMaker(Maker):
         restart = Path(input_doc.input_dir, "restart.equil")
         # FireWorks / jobflow-remote will insert the real SLURM/PBS id at launch time,
         # so here we just label it “pending”.
-        return Response(output=DmaxLammpsRunDocument(job_id="pending", restart_file=str(restart)))
+        return Response(
+            output=DmaxLammpsRunDocument(job_id="pending", restart_file=str(restart))
+        )
