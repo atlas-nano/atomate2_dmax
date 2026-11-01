@@ -96,7 +96,7 @@ def test_import(package_name, description=""):
 
 def main():
     print("Testing FIXED atomate2_dmax installation...\n")
-    
+
     # Test basic scientific packages
     print("Basic scientific packages:")
     basic_packages = [
@@ -109,7 +109,7 @@ def main():
         ('pymatgen', ''),
     ]
     basic_success = all(test_import(pkg, desc) for pkg, desc in basic_packages)
-    
+
     # Test molecular dynamics packages
     print("\nMolecular dynamics packages:")
     md_packages = [
@@ -118,7 +118,7 @@ def main():
         ('rdkit', ''),
     ]
     md_success = all(test_import(pkg, desc) for pkg, desc in md_packages)
-    
+
     # Test conda-forge packages (optional)
     print("\nOptional conda-forge packages:")
     optional_packages = [
@@ -128,11 +128,11 @@ def main():
         ('forcefield_utilities', ''),
     ]
     optional_success = all(test_import(pkg, desc) for pkg, desc in optional_packages)
-    
+
     # Test PSP
     print("\nPolymerStructurePredictor:")
     psp_success = test_import('psp.AmorphousBuilder', '')
-    
+
     # Test atomate2 base (should work now)
     print("\nAtomatе2 base:")
     try:
@@ -142,7 +142,7 @@ def main():
     except Exception as e:
         print(f"✗ atomate2 base import failed: {e}")
         atomate2_base_success = False
-    
+
     # Test DMAx settings (new approach)
     print("\nDMAx specific modules:")
     try:
@@ -152,7 +152,7 @@ def main():
     except Exception as e:
         print(f"✗ DMAx settings import failed: {e}")
         settings_success = False
-    
+
     # Test DMAx workflows
     dmax_success = False
     try:
@@ -161,7 +161,7 @@ def main():
         dmax_success = True
     except Exception as e:
         print(f"✗ DMAx workflows import failed: {e}")
-    
+
     print("\n" + "="*50)
     print("INSTALLATION STATUS:")
     print(f"Basic packages: {'✓ PASS' if basic_success else '✗ FAIL'}")
@@ -171,7 +171,7 @@ def main():
     print(f"Atomate2 base: {'✓ PASS' if atomate2_base_success else '✗ FAIL'}")
     print(f"DMAx settings: {'✓ PASS' if settings_success else '✗ FAIL'}")
     print(f"DMAx workflows: {'✓ PASS' if dmax_success else '✗ FAIL'}")
-    
+
     if all([basic_success, md_success, psp_success, atomate2_base_success, settings_success, dmax_success]):
         print("\n🎉 Installation FIXED! All critical components working!")
         return 0

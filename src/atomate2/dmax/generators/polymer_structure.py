@@ -1,15 +1,19 @@
 """
 Wrapper module for PolymerStructurePredictor AmorphousBuilder.
 """
+
 import os
+
 import pandas as pd
 from psp.AmorphousBuilder import Builder as PSPBuilder
+
 
 class PSPBuilderWrapper:
     """
     Serializable wrapper for PSP AmorphousBuilder for jobflow.
     Stores minimal info to reconstruct builder and generate forcefields.
     """
+
     def __init__(
         self,
         out_dir: str,
@@ -37,22 +41,36 @@ class PSPBuilderWrapper:
 
     def get_builder(self):
         # if original builder stored, return it
-        if hasattr(self, '_builder') and self._builder is not None:
+        if hasattr(self, "_builder") and self._builder is not None:
             return self._builder
         # else reconstruct from stored parameters
-        df = pd.DataFrame([
+        df = pd.DataFrame(
             [
-                "polymer",
-                self.smiles,
-                self.left_cap,
-                self.right_cap,
-                self.length,
-                self.num_molecules,
-                self.num_conf,
-                self.loop,
-            ]
-        ], columns=["ID","smiles","LeftCap","RightCap","Len","Num","NumConf","Loop"])
-        builder = PSPBuilder(df, density=self.density, box_type=self.box_type, OutDir=self.out_dir)
+                [
+                    "polymer",
+                    self.smiles,
+                    self.left_cap,
+                    self.right_cap,
+                    self.length,
+                    self.num_molecules,
+                    self.num_conf,
+                    self.loop,
+                ]
+            ],
+            columns=[
+                "ID",
+                "smiles",
+                "LeftCap",
+                "RightCap",
+                "Len",
+                "Num",
+                "NumConf",
+                "Loop",
+            ],
+        )
+        builder = PSPBuilder(
+            df, density=self.density, box_type=self.box_type, OutDir=self.out_dir
+        )
         return builder
 
     def as_dict(self):
@@ -72,6 +90,7 @@ class PSPBuilderWrapper:
     @classmethod
     def from_dict(cls, d):
         return cls(**d)
+
 
 def build_amorphous_structure(
     smiles: str,

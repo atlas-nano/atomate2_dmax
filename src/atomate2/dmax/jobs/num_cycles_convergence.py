@@ -1,11 +1,12 @@
 import os
 import re
+from dataclasses import dataclass
+from typing import Any
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from typing import Any
-from dataclasses import dataclass
-from jobflow import Maker, job, Response
+from jobflow import Maker, Response, job
 from scipy.optimize import curve_fit
 
 from atomate2.dmax.jobs.dma_parser import sin_func
@@ -20,14 +21,14 @@ def _parse_input_vars(input_script):
     with open(input_script) as f:
         for line in f:
             parts = line.strip().split()
-            if parts[:3] == ['variable', 'oap', 'equal'] and '*' in parts[-1]:
-                amp_pc = float(parts[-1].split('*')[0])
-            if parts[:3] == ['variable', 'period', 'equal']:
+            if parts[:3] == ["variable", "oap", "equal"] and "*" in parts[-1]:
+                amp_pc = float(parts[-1].split("*")[0])
+            if parts[:3] == ["variable", "period", "equal"]:
                 period = int(parts[-1])
-            if parts[:3] == ['variable', 'timestep', 'equal']:
+            if parts[:3] == ["variable", "timestep", "equal"]:
                 dt_fs = float(parts[-1])
-            if parts and parts[0] == 'fix' and 'deform' in parts:
-                idx = parts.index('deform')
+            if parts and parts[0] == "fix" and "deform" in parts:
+                idx = parts.index("deform")
                 if len(parts) > idx + 2:
                     axis = parts[idx + 2]
     if amp_pc is None or period is None or axis is None or dt_fs is None:
@@ -44,16 +45,18 @@ def _load_dma_dataframe(log_path, input_script):
     with open(input_script) as f:
         for line in f:
             parts = line.strip().split()
-            if parts and parts[0] == 'thermo_style':
-                labels = parts[2:] if parts[1] == 'custom' else parts[1:]
+            if parts and parts[0] == "thermo_style":
+                labels = parts[2:] if parts[1] == "custom" else parts[1:]
                 break
     if not labels:
         raise RuntimeError(f"Could not find thermo_style in {input_script}")
     # read log
-    with open(log_path, encoding='utf-8', errors='ignore') as fh:
+    with open(log_path, encoding="utf-8", errors="ignore") as fh:
         lines = fh.readlines()
     # locate start of DMA section
-    start = next((i for i, l in enumerate(lines) if 'NPT Dynamic Mechanical Analysis' in l), 0)
+    start = next(
+        (i for i, l in enumerate(lines) if "NPT Dynamic Mechanical Analysis" in l), 0
+    )
     data = []
     for line in lines[start:]:
         stripped = line.strip()
@@ -67,7 +70,7 @@ def _load_dma_dataframe(log_path, input_script):
 
 def _get_log_path(work_dir):
     # find first .log file
-    logs = [f for f in os.listdir(work_dir) if f.endswith('.log')]
+    logs = [f for f in os.listdir(work_dir) if f.endswith(".log")]
     if not logs:
         raise FileNotFoundError(f"LAMMPS log file not found in {work_dir}")
     return os.path.join(work_dir, logs[0])
@@ -87,16 +90,17 @@ class NumCyclesConvergenceMaker(Maker):
         presence simply forces a dependency edge so that this job starts
         **after** the full parser finishes.
     """
-    name: str = 'num_cycles_convergence'
+
+    name: str = "num_cycles_convergence"
     threshold: float = 0.01
 
     @job(output_schema=DmaxNumCyclesConvergenceFlowDocument)
-    def make(self, restart_file: str, parser_output: Any | None = None) -> Response:  # noqa: D401
+    def make(self, restart_file: str, parser_output: Any | None = None) -> Response:
         # ------------------------------------------------------------------ #
         # Setup paths
         # ------------------------------------------------------------------ #
         work_dir = os.path.dirname(str(restart_file))
-        input_script = os.path.join(work_dir, 'in.lammps')
+        input_script = os.path.join(work_dir, "in.lammps")
         log_path = _get_log_path(work_dir)
 
         # ------------------------------------------------------------------ #
@@ -108,14 +112,16 @@ class NumCyclesConvergenceMaker(Maker):
 
         # box length for max_strain
         lengths = {}
-        with open(log_path, encoding='utf-8', errors='ignore') as logf:
+        with open(log_path, encoding="utf-8", errors="ignore") as logf:
             for line in logf:
-                if 'orthogonal box' in line:
+                if "orthogonal box" in line:
                     nums = re.findall(r"[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?", line)
                     if len(nums) >= 6:
                         lo = [float(n) for n in nums[:3]]
                         hi = [float(n) for n in nums[3:6]]
-                        lengths = dict(zip(['x', 'y', 'z'], [hi[i] - lo[i] for i in range(3)]))
+                        lengths = dict(
+                            zip(["x", "y", "z"], [hi[i] - lo[i] for i in range(3)])
+                        )
                     break
         L0 = lengths.get(axis, 1.0)
         max_strain = amp_pc * L0
@@ -124,11 +130,13 @@ class NumCyclesConvergenceMaker(Maker):
         # Load thermo data
         # ------------------------------------------------------------------ #
         df = _load_dma_dataframe(log_path, input_script)
-        t = df['time'].to_numpy()
+        t = df["time"].to_numpy()
 
-        stress_label = f'p{axis}{axis}'
+        stress_label = f"p{axis}{axis}"
         if stress_label not in df.columns:
-            cand = [c for c in df.columns if c.startswith('p') and c not in ('pe', 'press')]
+            cand = [
+                c for c in df.columns if c.startswith("p") and c not in ("pe", "press")
+            ]
             if not cand:
                 raise KeyError(f"No stress column found for axis {axis}")
             stress_label = cand[0]
@@ -145,9 +153,13 @@ class NumCyclesConvergenceMaker(Maker):
             mask = t <= m * cycle_time_fs
             t_m, p_m = t[mask], p[mask]
 
-            guess_A = (p_m.max() - p_m.min())
-            popt, _ = curve_fit(lambda tt, A, phi: sin_func(tt, A, phi, omega),
-                                t_m, p_m, p0=[guess_A, 0.0])
+            guess_A = p_m.max() - p_m.min()
+            popt, _ = curve_fit(
+                lambda tt, A, phi: sin_func(tt, A, phi, omega),
+                t_m,
+                p_m,
+                p0=[guess_A, 0.0],
+            )
             A_fit, phi_fit = popt
 
             phase_rad = phi_fit % (2 * np.pi)
@@ -170,12 +182,12 @@ class NumCyclesConvergenceMaker(Maker):
         # ------------------------------------------------------------------ #
         # Plot
         # ------------------------------------------------------------------ #
-        plot_file = os.path.join(work_dir, 'tan_delta_vs_cycles.png')
+        plot_file = os.path.join(work_dir, "tan_delta_vs_cycles.png")
         plt.figure()
-        plt.plot(num_cycles, tan_deltas, 'o-')
-        plt.axvline(optimal, color='r', ls='--', label=f'Optimal = {optimal}')
-        plt.xlabel('Number of cycles')
-        plt.ylabel('tan δ')
+        plt.plot(num_cycles, tan_deltas, "o-")
+        plt.axvline(optimal, color="r", ls="--", label=f"Optimal = {optimal}")
+        plt.xlabel("Number of cycles")
+        plt.ylabel("tan δ")
         plt.legend()
         plt.tight_layout()
         plt.savefig(plot_file)

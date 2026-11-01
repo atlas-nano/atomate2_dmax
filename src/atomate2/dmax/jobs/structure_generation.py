@@ -1,12 +1,16 @@
 """
 Job maker for polymer structure generation using PSP AmorphousBuilder.
 """
+
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
 from jobflow import Maker, job
+
 from atomate2.dmax.generators.polymer_structure import build_amorphous_structure
 from atomate2.dmax.schemas.task import DmaxStructureTaskDocument
-import os
+
 
 @dataclass
 class PSPStructureMaker(Maker):
@@ -38,6 +42,7 @@ class PSPStructureMaker(Maker):
     return_builder : bool = False
         Whether to return the builder wrapper or the packmol pdb path.
     """
+
     name: str = "psp_structure_generation"
     smiles: str = field(default="[*]")
     left_cap: str = field(default="[*]")
@@ -75,7 +80,7 @@ class PSPStructureMaker(Maker):
         packmol_pdb = os.path.join(outdir, "packmol", "packmol.pdb")
         mol_dir = os.path.join(outdir, "molecules")
         # assume single PDB in molecules
-        mol_files = [f for f in os.listdir(mol_dir) if f.endswith('.pdb')]
+        mol_files = [f for f in os.listdir(mol_dir) if f.endswith(".pdb")]
         mol_pdb = os.path.join(mol_dir, mol_files[0]) if mol_files else None
         packmol_txt = open(packmol_pdb).read() if os.path.exists(packmol_pdb) else None
         mol_txt = open(mol_pdb).read() if mol_pdb and os.path.exists(mol_pdb) else None
