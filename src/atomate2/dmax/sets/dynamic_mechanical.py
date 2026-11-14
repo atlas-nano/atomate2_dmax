@@ -1,6 +1,7 @@
 """
 LAMMPS InputSet for dynamic mechanical analysis (DMA) of polymers.
 """
+
 from pymatgen.io.lammps.generators import BaseLammpsSetGenerator
 
 
@@ -24,6 +25,7 @@ class DynamicMechanicalSet(BaseLammpsSetGenerator):
     timestep : float
         Time step in ps.
     """
+
     def __init__(
         self,
         temperature: float = 300.0,
@@ -38,12 +40,14 @@ class DynamicMechanicalSet(BaseLammpsSetGenerator):
         self.template = "in.master_dynamic_mechanical_analysis"
         # total steps = ncycles * nsteps_per_cycle
         total_steps = ncycles * nsteps_per_cycle
-        self.settings.update({
-            "temperature": temperature,
-            "frequency": frequency,
-            "amplitude": amplitude,
-            "ncycles": ncycles,
-            "nsteps_per_cycle": nsteps_per_cycle,
-            "nsteps": total_steps,
-            "timestep": timestep,
-        })
+        self.settings.update(
+            {
+                "temperature": temperature,
+                "frequency": frequency,
+                "amplitude": amplitude,
+                "ncycles": ncycles,
+                "nsteps_per_cycle": nsteps_per_cycle,
+                "nsteps": total_steps,
+                "timestep": timestep,
+            }
+        )

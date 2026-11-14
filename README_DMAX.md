@@ -52,9 +52,9 @@ from atomate2.dmax.jobs.structure_generation import PSPStructureMaker
 # Create a polymer structure
 structure_maker = PSPStructureMaker(
     smiles="[*]CC[*]",  # Polyethylene
-    length=20,          # 20 monomers per chain
-    num_molecules=50,   # 50 chains
-    density=0.85        # g/cm³
+    length=20,  # 20 monomers per chain
+    num_molecules=50,  # 50 chains
+    density=0.85,  # g/cm³
 )
 
 # Create equilibration workflow
@@ -63,6 +63,7 @@ workflow = equil_maker.make()
 
 # Run the workflow (requires JobFlow setup)
 from jobflow import run_locally
+
 run_locally(workflow)
 ```
 
@@ -165,7 +166,7 @@ dma_maker = DynamicMechanicalAnalysisMaker(
     temperatures=[200, 250, 300, 350, 400],  # K
     strain_rates=[1e-4, 1e-3, 1e-2],  # 1/ps
     chain_length=30,
-    num_chains=100
+    num_chains=100,
 )
 
 workflow = dma_maker.make()
@@ -179,7 +180,7 @@ from atomate2.dmax.jobs.forcefield_param import ForceFieldMaker
 ff_makers = [
     ForceFieldMaker(method="ligpargen", ff_name="opls"),
     ForceFieldMaker(method="foyer", ff_name="oplsaa"),
-    ForceFieldMaker(method="foyer", ff_name="gaff2")
+    ForceFieldMaker(method="foyer", ff_name="gaff2"),
 ]
 
 # Use in comparative workflow...
