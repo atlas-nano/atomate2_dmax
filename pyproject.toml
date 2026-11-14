@@ -144,7 +144,7 @@ dmax = [
     "scikit-learn>=1.0.0",
     # Note: These packages should be installed via conda-forge:
     # - openbabel
-    # - rdkit  
+    # - rdkit
     # - ambertools
     # - mbuild
     # - foyer

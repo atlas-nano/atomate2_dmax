@@ -1,6 +1,7 @@
 """
 LAMMPS InputSet for runtime and error analysis simulations.
 """
+
 from pymatgen.io.lammps.generators import BaseLammpsSetGenerator
 
 
@@ -20,6 +21,7 @@ class ErrorAnalysisSet(BaseLammpsSetGenerator):
     tolerance : float
         Convergence tolerance for error evaluation.
     """
+
     def __init__(
         self,
         temperature: float = 300.0,
@@ -30,9 +32,11 @@ class ErrorAnalysisSet(BaseLammpsSetGenerator):
     ):
         super().__init__(**kwargs)
         self.template = "in.master_error_analysis"
-        self.settings.update({
-            "temperature": temperature,
-            "nsteps": nsteps,
-            "timestep": timestep,
-            "tolerance": tolerance,
-        })
+        self.settings.update(
+            {
+                "temperature": temperature,
+                "nsteps": nsteps,
+                "timestep": timestep,
+                "tolerance": tolerance,
+            }
+        )

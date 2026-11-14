@@ -1,19 +1,26 @@
 import os
-import numpy as np
-import matplotlib.pyplot as plt
 from dataclasses import dataclass
-from jobflow import Maker, job, Response
 
-from atomate2.dmax.schemas.task import DmaxErrorAnalysisFlowDocument
-from atomate2.dmax.schemas.task import DmaxDmaParserDocument
+import matplotlib.pyplot as plt
+import numpy as np
+from jobflow import Maker, Response, job
+
+from atomate2.dmax.schemas.task import (
+    DmaxDmaParserDocument,
+    DmaxErrorAnalysisFlowDocument,
+)
+
 
 @dataclass
 class ErrorAnalysisPlotMaker(Maker):
     """Maker to plot error analysis metrics across frequencies"""
-    name: str = 'error_analysis_plot'
+
+    name: str = "error_analysis_plot"
 
     @job(output_schema=DmaxErrorAnalysisFlowDocument)
-    def make(self, parser_groups: list[list[DmaxDmaParserDocument]], freqs_ghz: list[float]) -> Response:
+    def make(
+        self, parser_groups: list[list[DmaxDmaParserDocument]], freqs_ghz: list[float]
+    ) -> Response:
         # compute stats for each frequency
         storage_mean = []
         storage_std = []
@@ -33,36 +40,36 @@ class ErrorAnalysisPlotMaker(Maker):
             tan_std.append(float(np.std(tans)))
         # plotting
         cwd = os.getcwd()
-        storage_plot = os.path.join(cwd, 'storage_vs_freq.png')
+        storage_plot = os.path.join(cwd, "storage_vs_freq.png")
         plt.figure()
-        plt.errorbar(freqs_ghz, storage_mean, yerr=storage_std, fmt='o-', capsize=5)
-        plt.xlabel('Frequency (GHz)')
-        plt.ylabel('Storage Modulus (MPa)')
-        plt.title('Storage Modulus vs Frequency')
+        plt.errorbar(freqs_ghz, storage_mean, yerr=storage_std, fmt="o-", capsize=5)
+        plt.xlabel("Frequency (GHz)")
+        plt.ylabel("Storage Modulus (MPa)")
+        plt.title("Storage Modulus vs Frequency")
         plt.tight_layout()
         plt.savefig(storage_plot)
         plt.close()
-        
-        loss_plot = os.path.join(cwd, 'loss_vs_freq.png')
+
+        loss_plot = os.path.join(cwd, "loss_vs_freq.png")
         plt.figure()
-        plt.errorbar(freqs_ghz, loss_mean, yerr=loss_std, fmt='s-', capsize=5)
-        plt.xlabel('Frequency (GHz)')
-        plt.ylabel('Loss Modulus (MPa)')
-        plt.title('Loss Modulus vs Frequency')
+        plt.errorbar(freqs_ghz, loss_mean, yerr=loss_std, fmt="s-", capsize=5)
+        plt.xlabel("Frequency (GHz)")
+        plt.ylabel("Loss Modulus (MPa)")
+        plt.title("Loss Modulus vs Frequency")
         plt.tight_layout()
         plt.savefig(loss_plot)
         plt.close()
-        
-        tan_plot = os.path.join(cwd, 'tan_delta_vs_freq.png')
+
+        tan_plot = os.path.join(cwd, "tan_delta_vs_freq.png")
         plt.figure()
-        plt.errorbar(freqs_ghz, tan_mean, yerr=tan_std, fmt='d-', capsize=5)
-        plt.xlabel('Frequency (GHz)')
-        plt.ylabel('Loss Tangent (tan δ)')
-        plt.title('Loss Tangent vs Frequency')
+        plt.errorbar(freqs_ghz, tan_mean, yerr=tan_std, fmt="d-", capsize=5)
+        plt.xlabel("Frequency (GHz)")
+        plt.ylabel("Loss Tangent (tan δ)")
+        plt.title("Loss Tangent vs Frequency")
         plt.tight_layout()
         plt.savefig(tan_plot)
         plt.close()
-        
+
         return Response(
             output=DmaxErrorAnalysisFlowDocument(
                 freqs_ghz=freqs_ghz,
